@@ -100,6 +100,13 @@ config CPU_FREQ_DEFAULT_GOV_CONSERVATIVE
 	  governor. If unsure have a look at the help section of the
 	  driver. Fallback governor will be the performance governor.
 
+config CPU_FREQ_DEFAULT_GOV_FREELUNCH
+	bool "stateplug"
+	select CPU_FREQ_GOV_FREELUNCH
+	select CPU_FREQ_GOV_PERFORMANCE
+	help
+	  Fucking figure it out, damn it.
+
 config CPU_FREQ_DEFAULT_GOV_INTERACTIVE
 	bool "interactive"
 	select CPU_FREQ_GOV_INTERACTIVE
@@ -206,10 +213,24 @@ config CPU_FREQ_GOV_CONSERVATIVE
 
 	  If in doubt, say N.
 
+config CPU_FREQ_GOV_FREELUNCH
+	tristate "'freelunch' cpufreq governor"
+	depends on CPU_FREQ
+	help
+	  'freelunch' -- an incredibly simple hotplugging governor.
+
 config SEC_DVFS
 	bool "DVFS job"
 	default n
 	depends on CPU_FREQ
+
+config CPU_FREQ_DVFS_MONITOR
+	bool "dvfs monitor"
+	depends on CPU_FREQ
+	help
+	  This option adds a proc node for dvfs monitoring.
+	  /proc/dvfs_mon
+
 
 menu "x86 CPU frequency scaling drivers"
 depends on X86
