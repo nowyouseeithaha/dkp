@@ -469,7 +469,6 @@ static void set_dvfs_lock(struct mms_ts_info *info, uint32_t on)
 #endif
 #ifdef TOUCH_INTERACTION
 static void do_interaction(struct work_struct *work) {
-	printk(KERN_DEBUG "mms doing do_interaction\n");
 	cpufreq_set_interactivity(!!touch_is_pressed);
 }
 #endif
@@ -501,7 +500,6 @@ static void release_all_fingers(struct mms_ts_info *info)
 #endif
 #ifdef TOUCH_INTERACTION
 	schedule_work(&info->interaction_work);
-	//cpufreq_set_interactivity(0);
 #endif
 }
 
@@ -735,9 +733,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 	set_dvfs_lock(info, !!touch_is_pressed);
 #endif
 #ifdef TOUCH_INTERACTION
-	printk(KERN_DEBUG "mms should bump interactivity");
 	schedule_work(&info->interaction_work);
-	//cpufreq_set_interactivity(!!touch_is_pressed);
 #endif
 
 out:
