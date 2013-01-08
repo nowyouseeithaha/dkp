@@ -84,7 +84,11 @@ enum {
 #define TOUCH_BOOSTER			1
 #define TOUCH_BOOSTER_OFF_TIME	100
 #define TOUCH_BOOSTER_CHG_TIME	200
+#else
+#define TOUCH_BOOSTER 0
+#define TOUCH_INTERACTION
 #endif
+
 
 #ifdef SEC_TSP_FW_UPDATE
 
@@ -290,6 +294,9 @@ struct mms_ts_info {
 	bool	dvfs_lock_status;
 	struct mutex dvfs_lock;
 #endif
+#ifdef TOUCH_INTERACTION
+	struct work_struct interaction_work;
+#endif
 
 	/* protects the enabled flag */
 	struct mutex			lock;
@@ -460,6 +467,12 @@ static void set_dvfs_lock(struct mms_ts_info *info, uint32_t on)
 	mutex_unlock(&info->dvfs_lock);
 }
 #endif
+#ifdef TOUCH_INTERACTION
+static void do_interaction(struct work_struct *work) {
+	printk(KERN_DEBUG "mms doing do_interaction\n");
+	cpufreq_set_interactivity(!!touch_is_pressed);
+}
+#endif
 
 static void release_all_fingers(struct mms_ts_info *info)
 {
@@ -485,6 +498,10 @@ static void release_all_fingers(struct mms_ts_info *info)
 #if TOUCH_BOOSTER
 	set_dvfs_lock(info, 2);
 	pr_info("[TSP] dvfs_lock free.\n ");
+#endif
+#ifdef TOUCH_INTERACTION
+	schedule_work(&info->interaction_work);
+	//cpufreq_set_interactivity(0);
 #endif
 }
 
@@ -716,6 +733,11 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 
 #if TOUCH_BOOSTER
 	set_dvfs_lock(info, !!touch_is_pressed);
+#endif
+#ifdef TOUCH_INTERACTION
+	printk(KERN_DEBUG "mms should bump interactivity");
+	schedule_work(&info->interaction_work);
+	//cpufreq_set_interactivity(!!touch_is_pressed);
 #endif
 
 out:
@@ -3016,6 +3038,9 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 	INIT_DELAYED_WORK(&info->work_dvfs_off, set_dvfs_off);
 	INIT_DELAYED_WORK(&info->work_dvfs_chg, change_dvfs_lock);
 	info->dvfs_lock_status = false;
+#endif
+#ifdef TOUCH_INTERACTION
+	INIT_WORK(&info->interaction_work, do_interaction);
 #endif
 
 #if ISC_DL_MODE

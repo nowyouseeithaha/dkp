@@ -47,6 +47,8 @@ struct cpu_dbs_info_s {
 	struct mutex timer_mutex;
 
 	int hotplug_cycle;
+	unsigned int last_load;
+	int is_interactive;
 };
 static DEFINE_PER_CPU(struct cpu_dbs_info_s, cs_cpu_dbs_info);
 
@@ -56,6 +58,10 @@ static unsigned int dbs_enable;	/* number of CPUs using this policy */
 static struct workqueue_struct *hotplug_wq;
 static struct work_struct cpu_up_work;
 static struct work_struct cpu_down_work;
+//static struct delayed_work noninteractive_work;
+
+/* Interaction stuff */
+//static int interactive_mode;
 
 /*
  * dbs_mutex protects dbs_enable in governor start/stop.
@@ -72,6 +78,7 @@ static struct dbs_tuners {
 	unsigned int hotplug_up_usage;
 	unsigned int hotplug_down_usage;
 	unsigned int overestimate_khz;
+	unsigned int interaction_hack;
 } dbs_tuners_ins = {
 #if 0
 	/* Crazy-aggressive */
@@ -83,6 +90,7 @@ static struct dbs_tuners {
 	.hotplug_up_usage = 40,
 	.hotplug_down_usage = 10,
 	.overestimate_khz = 125000,
+	.interaction_hack = 1,
 #elif 1
 	/* Crazy-conservative */
 	.sampling_rate = 20000,
@@ -93,6 +101,7 @@ static struct dbs_tuners {
 	.hotplug_up_usage = 50,
 	.hotplug_down_usage = 20,
 	.overestimate_khz = 25000,
+	.interaction_hack = 1,
 #else
 	/* Original settings */
 	.sampling_rate = 20000,
@@ -179,8 +188,16 @@ static ssize_t show_sampling_rate_min(struct kobject *kobj,
 {
 	return sprintf(buf, "%u\n", 10000);
 }
+/*
+static ssize_t show_in_interactive_mode(struct kobject *kobj,
+				      struct attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", interactive_mode);
+}
+*/
 
 define_one_global_ro(sampling_rate_min);
+//define_one_global_ro(in_interactive_mode);
 
 /* cpufreq_freelunch Governor Tunables */
 #define show_one(file_name, object)							\
@@ -211,6 +228,7 @@ i_am_lazy(hotplug_up_load, 0, 10)
 i_am_lazy(hotplug_up_usage, 0, 100)
 i_am_lazy(hotplug_down_usage, 0, 100)
 i_am_lazy(overestimate_khz, 0, 1000000)
+i_am_lazy(interaction_hack, 0, 1)
 
 static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b,
 				   const char *buf, size_t count)
@@ -263,6 +281,7 @@ define_one_global_rw(ignore_nice_load);
 
 static struct attribute *dbs_attributes[] = {
 	&sampling_rate_min.attr,
+	//&in_interactive_mode.attr,
 	&sampling_rate.attr,
 	&ignore_nice_load.attr,
 	&hotplug_up_cycles.attr,
@@ -271,6 +290,7 @@ static struct attribute *dbs_attributes[] = {
 	&hotplug_up_usage.attr,
 	&hotplug_down_usage.attr,
 	&overestimate_khz.attr,
+	&interaction_hack.attr,
 	NULL
 };
 
@@ -285,9 +305,14 @@ static struct attribute_group dbs_attr_group = {
 static void do_cpu_up(struct work_struct *work) {
 	if (num_online_cpus() == 1) cpu_up(1);
 }
-static void do_cpu_down(struct work_struct *work) { 
+static void do_cpu_down(struct work_struct *work) {
 	if (num_online_cpus() > 1) cpu_down(1);
 }
+/*
+static void do_noninteractive(struct work_struct *work) {
+	interactive_mode = 0;
+}
+*/
 
 static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 {
@@ -310,7 +335,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	wall_time = (unsigned int) cputime64_sub(cur_wall_time,
 		this_dbs_info->prev_cpu_wall);
 	this_dbs_info->prev_cpu_wall = cur_wall_time;
-	
+
 	idle_time = (unsigned int) cputime64_sub(cur_idle_time,
 		this_dbs_info->prev_cpu_idle);
 	this_dbs_info->prev_cpu_idle = cur_idle_time;
@@ -333,8 +358,23 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	/* Use an accurate load estimate for hotplug, and overestimate for freq */
 	load = policy->cur / wall_time * (wall_time - idle_time);
-	this_dbs_info->requested_freq = (policy->cur + dbs_tuners_ins.overestimate_khz) /
-		wall_time * (wall_time - idle_time);
+
+	//if (interactive_mode) {
+	if (this_dbs_info->is_interactive) {
+		/*int temp_load = load;
+		if (this_dbs_info->last_load > load) load = this_dbs_info->last_load;
+		this_dbs_info->last_load = temp_load;*/
+		if (this_dbs_info->last_load > load)
+			load = (load + this_dbs_info->last_load) / 2;
+		this_dbs_info->last_load = load;
+		//if (load < policy->min) interactive_mode = 0;
+		if (this_dbs_info->is_interactive == 2 && load < policy->min)
+			this_dbs_info->is_interactive = 0;
+	}
+	/*this_dbs_info->requested_freq = (policy->cur + dbs_tuners_ins.overestimate_khz) /
+		wall_time * (wall_time - idle_time);*/
+	this_dbs_info->requested_freq = 1000 * load / policy->cur *
+		(policy->cur + dbs_tuners_ins.overestimate_khz) / 1000;
 
 	/* Hotplug? */
 	if (num_online_cpus() == 1) {
@@ -367,7 +407,10 @@ static void do_dbs_timer(struct work_struct *work)
 	unsigned int cpu = dbs_info->cpu;
 
 	/* We want all CPUs to do sampling nearly on same jiffy */
-	int delay = usecs_to_jiffies(dbs_tuners_ins.sampling_rate);
+	int delay;
+	//if (interactive_mode) delay = usecs_to_jiffies(10000);
+	if (dbs_info->is_interactive) delay = usecs_to_jiffies(10000);
+	else delay = usecs_to_jiffies(dbs_tuners_ins.sampling_rate);
 
 	delay -= jiffies % delay;
 
@@ -488,6 +531,30 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		mutex_unlock(&this_dbs_info->timer_mutex);
 
 		break;
+
+	case CPUFREQ_GOV_INTERACT:
+		printk(KERN_DEBUG "got GOV_INTERACT.\n");
+		if ((!this_dbs_info->is_interactive) && dbs_tuners_ins.interaction_hack) {
+			printk(KERN_DEBUG "doing interact setup.\n");
+			mutex_lock(&this_dbs_info->timer_mutex);
+			this_dbs_info->last_load = 0;
+			this_dbs_info->is_interactive = 1;
+			cancel_delayed_work_sync(&this_dbs_info->work);
+			schedule_delayed_work_on(this_dbs_info->cpu, &this_dbs_info->work,
+				usecs_to_jiffies(10000));
+			mutex_unlock(&this_dbs_info->timer_mutex);
+			/* Place us in interactive mode */
+			//interactive_mode = 1;
+		}
+
+		break;
+
+	case CPUFREQ_GOV_NOINTERACT:
+		/* After 100ms, make sure we're no longer in interactive mode. */
+		//schedule_delayed_work(&noninteractive_work, usecs_to_jiffies(100000));
+		this_dbs_info->is_interactive = 2;
+
+		break;
 	}
 	return 0;
 }
@@ -511,6 +578,7 @@ static int __init cpufreq_gov_dbs_init(void)
 	}
 	INIT_WORK(&cpu_up_work, do_cpu_up);
 	INIT_WORK(&cpu_down_work, do_cpu_down);
+	//INIT_DELAYED_WORK(&noninteractive_work, do_noninteractive);
 	return cpufreq_register_governor(&cpufreq_gov_freelunch);
 }
 

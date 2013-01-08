@@ -49,6 +49,8 @@
 #define TOUCH_BOOSTER			1
 #define TOUCH_BOOSTER_OFF_TIME	100
 #define TOUCH_BOOSTER_CHG_TIME	200
+#else
+#define TOUCH_INTERACTION
 #endif
 
 /* Version */
@@ -123,6 +125,9 @@ static struct mxt224_data {
 	struct delayed_work	work_dvfs_chg;
 	bool	dvfs_lock_status;
 	struct mutex dvfs_lock;
+#endif
+#ifdef TOUCH_INTERACTION
+	struct work_struct interaction_work;
 #endif
 	u8 family_id;
 	u32 finger_mask;
@@ -279,6 +284,12 @@ static void set_dvfs_lock(struct mxt224_data *data, uint32_t on)
 	mutex_unlock(&data->dvfs_lock);
 }
 #endif
+#ifdef TOUCH_INTERACTION
+static void do_interaction(struct work_struct *work) {
+	printk(KERN_DEBUG "mxt doing do_interaction\n");
+	cpufreq_set_interactivity(!!touch_is_pressed);
+}
+#endif
 
 static int read_mem(struct mxt224_data *data, u16 reg, u8 len, u8 *buf)
 {
@@ -328,6 +339,9 @@ static int __devinit mxt224_reset(struct mxt224_data *data)
 #if TOUCH_BOOSTER
 	set_dvfs_lock(data, 2);
 	pr_info("[TSP] dvfs_lock free.\n");
+#endif
+#ifdef TOUCH_INTERACTION
+	cpufreq_set_interactivity(0);
 #endif
 
 	return write_mem(data, data->cmd_proc + CMD_RESET_OFFSET, 1, &buf);
@@ -1025,6 +1039,10 @@ static void report_input_data(struct mxt224_data *data)
 
 #if TOUCH_BOOSTER
 	set_dvfs_lock(data, !!touch_is_pressed);
+#endif
+#ifdef TOUCH_INTERACTION
+	//cpufreq_set_interactivity(!!touch_is_pressed);
+	schedule_work(&data->interaction_work);
 #endif
 }
 
@@ -2721,6 +2739,9 @@ static int __devinit mxt224_probe(struct i2c_client *client,
 	INIT_DELAYED_WORK(&data->work_dvfs_off, set_dvfs_off);
 	INIT_DELAYED_WORK(&data->work_dvfs_chg, change_dvfs_lock);
 	data->dvfs_lock_status = false;
+#endif
+#ifdef TOUCH_INTERACTION
+	INIT_WORK(&data->touch_interaction, do_interaction);
 #endif
 
 	data->gpio_read_done = pdata->gpio_read_done;

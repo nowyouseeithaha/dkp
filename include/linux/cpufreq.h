@@ -171,6 +171,8 @@ static inline unsigned long cpufreq_scale(unsigned long old, u_int div, u_int mu
 #define CPUFREQ_GOV_START  1
 #define CPUFREQ_GOV_STOP   2
 #define CPUFREQ_GOV_LIMITS 3
+#define CPUFREQ_GOV_INTERACT 4
+#define CPUFREQ_GOV_NOINTERACT 5
 
 struct cpufreq_governor {
 	char	name[CPUFREQ_NAME_LEN];
@@ -404,6 +406,7 @@ enum {
 	UNREGISTERED = 0
 };
 
+void cpufreq_set_interactivity(int on);
 int cpufreq_set_limit(unsigned int flag, unsigned int value);
 int cpufreq_set_limit_defered(unsigned int flag, unsigned int value);
 int cpufreq_get_dvfs_state(void);
