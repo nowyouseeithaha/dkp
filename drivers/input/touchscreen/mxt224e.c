@@ -286,7 +286,6 @@ static void set_dvfs_lock(struct mxt224_data *data, uint32_t on)
 #endif
 #ifdef TOUCH_INTERACTION
 static void do_interaction(struct work_struct *work) {
-	printk(KERN_DEBUG "mxt doing do_interaction\n");
 	cpufreq_set_interactivity(!!touch_is_pressed);
 }
 #endif
@@ -1041,7 +1040,6 @@ static void report_input_data(struct mxt224_data *data)
 	set_dvfs_lock(data, !!touch_is_pressed);
 #endif
 #ifdef TOUCH_INTERACTION
-	//cpufreq_set_interactivity(!!touch_is_pressed);
 	schedule_work(&data->interaction_work);
 #endif
 }
