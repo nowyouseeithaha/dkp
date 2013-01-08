@@ -1827,8 +1827,19 @@ static unsigned int user_max_freq_limit = MAX_FREQ_LIMIT;
 /* Notify governors of touch immediately.
  * This may block while mutexes are locked.
  */
-void cpufreq_set_interactivity(int on) {
+void cpufreq_set_interactivity(int on, int idbit) {
 	unsigned int j;
+	static int pressids = 0;
+	if (on) {
+		int oldids;
+		oldids = pressids;
+		pressids |= 1 << idbit;
+		if (oldids) return;
+	} else {
+		pressids &= ~(1 << idbit);
+		if (pressids) return;
+	}
+	printk(KERN_DEBUG "interactivity %i from id %i\n", pressids, idbit);
 	for_each_online_cpu(j) {
 		struct cpufreq_policy *pol;
 		pol = per_cpu(cpufreq_cpu_data, j);
@@ -1836,8 +1847,8 @@ void cpufreq_set_interactivity(int on) {
 			printk(KERN_DEBUG "policy for cpu %u is null\n", j);
 			continue;
 		}
-		if (on) __cpufreq_governor(pol, CPUFREQ_GOV_INTERACT);
-		else __cpufreq_governor(pol, CPUFREQ_GOV_NOINTERACT);
+		__cpufreq_governor(pol, 
+			pressids ? CPUFREQ_GOV_INTERACT : CPUFREQ_GOV_NOINTERACT);
 	}
 }
 

@@ -27,13 +27,20 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 
+/* Mutex spam */
+#if 0
 #define _mutex_lock(m) \
-printk(KERN_DEBUG "%s waiting on timer_mutex\n", __func__); \
+/*printk(KERN_DEBUG "%s waiting on timer_mutex\n", __func__); */\
 mutex_lock(m); \
-printk(KERN_DEBUG "%s acquired timer_mutex\n", __func__);
+printk(KERN_DEBUG "%s can has timer_mutex\n", __func__); \
+/*printk(KERN_DEBUG "%s acquired timer_mutex\n", __func__);*/
 #define _mutex_unlock(m) \
-printk(KERN_DEBUG "%s released timer_mutex\n", __func__); \
+/*printk(KERN_DEBUG "%s released timer_mutex\n", __func__); */\
 mutex_unlock(m);
+#else
+#define _mutex_lock(m) mutex_lock(m)
+#define _mutex_unlock(m) mutex_unlock(m)
+#endif
 
 // {{{1 tuner crap
 static void do_dbs_timer(struct work_struct *work);
@@ -102,7 +109,7 @@ static struct dbs_tuners {
 	.interaction_hack = 1,
 #elif 1
 	/* Crazy-conservative */
-	.sampling_rate = 20000,
+	.sampling_rate = 25000,
 	.ignore_nice = 0,
 	.hotplug_up_cycles = 3,
 	.hotplug_down_cycles = 1,

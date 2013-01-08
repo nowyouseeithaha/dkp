@@ -406,7 +406,14 @@ enum {
 	UNREGISTERED = 0
 };
 
-void cpufreq_set_interactivity(int on);
+enum {
+	INTERACT_ID_TOUCHSCREEN,
+	INTERACT_ID_SOFTKEY,
+	INTERACT_ID_HARDKEY,
+	INTERACT_ID_OTHER
+};
+
+void cpufreq_set_interactivity(int on, int idbit);
 int cpufreq_set_limit(unsigned int flag, unsigned int value);
 int cpufreq_set_limit_defered(unsigned int flag, unsigned int value);
 int cpufreq_get_dvfs_state(void);
