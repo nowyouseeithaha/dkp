@@ -56,15 +56,6 @@ struct gpio_keys_drvdata {
 
 static int button_pressed ;
 
-/* TOUCH_INTERACTION stuff */
-#ifdef TOUCH_INTERACTION
-//static int current_pressed;
-//static struct work_struct interaction_work;
-/*static void do_interaction(struct work_struct *work) {
-	cpufreq_set_interactivity(0, INTERACT_ID_HARDKEY);
-}*/
-#endif
-
 /*
  * SYSFS interface for enabling/disabling keys and switches:
  *
@@ -383,8 +374,6 @@ static void gpio_keys_report_event(struct gpio_button_data *bdata)
 	input_sync(input);
 #ifdef TOUCH_INTERACTION
 	if (button->code == KEY_HOMEPAGE) {
-		//current_pressed = state;
-		//schedule_work(&interaction_work);
 		/* Bump initially regardless of state.  cpufreq_set_interactivity() will filter. */
 		cpufreq_set_interactivity(1, INTERACT_ID_HARDKEY);
 		/* Unset if this is a release event. */
@@ -436,9 +425,6 @@ static int __devinit gpio_keys_setup_key(struct platform_device *pdev,
 
 	setup_timer(&bdata->timer, gpio_keys_timer, (unsigned long)bdata);
 	INIT_WORK(&bdata->work, gpio_keys_work_func);
-#ifdef TOUCH_INTERACTION
-	//INIT_WORK(&interaction_work, do_interaction);
-#endif
 
 	error = gpio_request(button->gpio, desc);
 	if (error < 0) {

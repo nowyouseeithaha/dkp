@@ -1830,6 +1830,7 @@ static unsigned int user_max_freq_limit = MAX_FREQ_LIMIT;
 void cpufreq_set_interactivity(int on, int idbit) {
 	unsigned int j;
 	static int pressids = 0;
+	/* Filter events so we don't grab mutexes all over the place */
 	if (on) {
 		int oldids;
 		oldids = pressids;
@@ -1839,7 +1840,7 @@ void cpufreq_set_interactivity(int on, int idbit) {
 		pressids &= ~(1 << idbit);
 		if (pressids) return;
 	}
-	printk(KERN_DEBUG "interactivity %i from id %i\n", pressids, idbit);
+	/* Inform all available policies */
 	for_each_online_cpu(j) {
 		struct cpufreq_policy *pol;
 		pol = per_cpu(cpufreq_cpu_data, j);

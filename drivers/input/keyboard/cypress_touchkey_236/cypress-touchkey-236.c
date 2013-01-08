@@ -115,7 +115,6 @@ static int touchled_cmd_reversed;
 static int current_pressed;
 static struct work_struct interaction_work;
 static void do_interaction(struct work_struct *work) {
-	printk(KERN_DEBUG "cypress touchinteraction go!  cp=%i\n", current_pressed);
 	cpufreq_set_interactivity(!!current_pressed, INTERACT_ID_SOFTKEY);
 }
 #endif
