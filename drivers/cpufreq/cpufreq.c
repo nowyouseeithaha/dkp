@@ -1824,6 +1824,23 @@ static unsigned int app_max_freq_limit = MAX_FREQ_LIMIT;
 static unsigned int user_min_freq_limit = MIN_FREQ_LIMIT;
 static unsigned int user_max_freq_limit = MAX_FREQ_LIMIT;
 
+/* Notify governors of touch immediately.
+ * This may block while mutexes are locked.
+ */
+void cpufreq_set_interactivity(int on) {
+	unsigned int j;
+	for_each_online_cpu(j) {
+		struct cpufreq_policy *pol;
+		pol = per_cpu(cpufreq_cpu_data, j);
+		if (pol == 0) {
+			printk(KERN_DEBUG "policy for cpu %u is null\n", j);
+			continue;
+		}
+		if (on) __cpufreq_governor(pol, CPUFREQ_GOV_INTERACT);
+		else __cpufreq_governor(pol, CPUFREQ_GOV_NOINTERACT);
+	}
+}
+
 static int cpufreq_set_limits_off
 	(int cpu, unsigned int min, unsigned int max)
 {
