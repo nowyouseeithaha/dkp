@@ -84,6 +84,7 @@ static struct dbs_tuners {
 	unsigned int hotplug_down_usage;
 	unsigned int overestimate_khz;
 	unsigned int interaction_overestimate_khz;
+	unsigned int interaction_threshold;
 	unsigned int interaction_hack;
 } dbs_tuners_ins = {
 #if 0
@@ -96,7 +97,8 @@ static struct dbs_tuners {
 	.hotplug_up_usage = 40,
 	.hotplug_down_usage = 10,
 	.overestimate_khz = 125000,
-	.interaction_overestimate_khz = 125000,
+	.interaction_overestimate_khz = 250000,
+	.interaction_threshold = 5,
 	.interaction_hack = 1,
 #elif 1
 	/* Crazy-conservative */
@@ -109,18 +111,8 @@ static struct dbs_tuners {
 	.hotplug_down_usage = 20,
 	.overestimate_khz = 25000,
 	.interaction_overestimate_khz = 125000,
+	.interaction_threshold = 15,
 	.interaction_hack = 1,
-#else
-	/* Original settings */
-	.sampling_rate = 20000,
-	.ignore_nice = 0,
-	.hotplug_up_cycles = 2,
-	.hotplug_down_cycles = 2,
-	.hotplug_up_load = 3,
-	.hotplug_up_usage = 60,
-	.hotplug_down_usage = 25,
-	.overestimate_khz = 75000,
-	.interaction_overestimate_khz = 75000,
 #endif
 };
 // }}}
@@ -230,6 +222,7 @@ i_am_lazy(hotplug_up_usage, 0, 100)
 i_am_lazy(hotplug_down_usage, 0, 100)
 i_am_lazy(overestimate_khz, 0, 1000000)
 i_am_lazy(interaction_overestimate_khz, 0, 1000000)
+i_am_lazy(interaction_threshold, 0, 100)
 i_am_lazy(interaction_hack, 0, 1)
 
 static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b,
@@ -292,6 +285,7 @@ static struct attribute *dbs_attributes[] = {
 	&hotplug_down_usage.attr,
 	&overestimate_khz.attr,
 	&interaction_overestimate_khz.attr,
+	&interaction_threshold.attr,
 	&interaction_hack.attr,
 	NULL
 };
@@ -357,18 +351,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	load = policy->cur / wall_time * (wall_time - idle_time);
 
 	if (this_dbs_info->is_interactive) {
-#if 0
-		if (this_dbs_info->last_load > load)
-			load = (load + this_dbs_info->last_load) / 2;
-		this_dbs_info->last_load = load;
-#endif
 		unsigned int temp_load = load;
 		if (this_dbs_info->last_load > load) {
 			load = this_dbs_info->last_load;
 			this_dbs_info->last_load =
 				(temp_load + this_dbs_info->last_load) / 2;
 		} else this_dbs_info->last_load = load;
-		if (this_dbs_info->is_interactive == 2 && load < policy->min)
+		if (this_dbs_info->is_interactive == 2 &&
+			load < policy->max * dbs_tuners_ins.interaction_threshold / 100)
 			this_dbs_info->is_interactive = 0;
 		this_dbs_info->requested_freq = 1000 * load / policy->cur *
 			(policy->cur + dbs_tuners_ins.interaction_overestimate_khz) / 1000;
