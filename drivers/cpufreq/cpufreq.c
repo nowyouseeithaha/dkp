@@ -1840,15 +1840,19 @@ void cpufreq_set_interactivity(int on, int idbit) {
 		pressids &= ~(1 << idbit);
 		if (pressids) return;
 	}
+	/*printk(KERN_DEBUG "cpufreq: setting interact %i for id %i\n",
+		pressids, idbit);*/
 	/* Inform all available policies */
 	for_each_online_cpu(j) {
 		struct cpufreq_policy *pol;
 		pol = per_cpu(cpufreq_cpu_data, j);
-		if (pol == 0) {
+		if (pol == NULL) {
 			printk(KERN_DEBUG "policy for cpu %u is null\n", j);
 			continue;
 		}
-		__cpufreq_governor(pol, 
+		//__cpufreq_governor(pol, 
+		// Bypass __cpufreq_governor() crap
+		policy->governor->governor(pol,
 			pressids ? CPUFREQ_GOV_INTERACT : CPUFREQ_GOV_NOINTERACT);
 	}
 }

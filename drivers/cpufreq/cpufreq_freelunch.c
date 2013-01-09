@@ -12,6 +12,14 @@
  * published by the Free Software Foundation.
  */
 
+/* Current (Known) Issues:
+ * - Interactive mode defers forever in lockscreen.  Seems unfixable without
+ *   causing other issues, and I don't care anyway.  Don't leave your
+ *   lockscreen on.  Problem solved.
+ * - Recents animations are choppy.  Seems unfixable, and even Interactive has
+ *   issues with it (though to a lesser extent).
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -28,8 +36,8 @@
 #include <linux/slab.h>
 
 /* Mutex spam
- * These shouldn't be needed anymore.  It seems like if we don't dereference
- * null pointers willy-nilly, we have fewer problems.
+ * XXX These shouldn't be needed anymore.  It seems like if we don't
+ * dereference null pointers willy-nilly, we have fewer problems.
  */
 #if 0
 #define _mutex_lock(m) \
@@ -80,7 +88,6 @@ static unsigned int dbs_enable;	/* number of CPUs using this policy */
 static struct workqueue_struct *hotplug_wq;
 static struct work_struct cpu_up_work;
 static struct work_struct cpu_down_work;
-//static struct delayed_work noninteractive_work;
 
 /*
  * dbs_mutex protects dbs_enable in governor start/stop.
@@ -99,10 +106,11 @@ static struct dbs_tuners {
 
 	unsigned int overestimate_khz;
 
+	unsigned int interaction_hack;
+	unsigned int interaction_superhack;
 	unsigned int interaction_overestimate_khz;
 	unsigned int interaction_return_usage;
 	unsigned int interaction_return_cycles;
-	unsigned int interaction_hack;
 } dbs_tuners_ins = {
 #if 0
 	/* Pointlessly aggressive */
@@ -114,10 +122,11 @@ static struct dbs_tuners {
 	.hotplug_up_usage = 40,
 	.hotplug_down_usage = 10,
 	.overestimate_khz = 125000,
+	.interaction_hack = 1,
+	.interaction_superhack = 1,
 	.interaction_overestimate_khz = 250000,
 	.interaction_return_usage = 15,
 	.interaction_return_cycles = 5,
-	.interaction_hack = 1,
 #elif 1
 	/* Pretty reasonable defaults */
 	.sampling_rate = 25000,
@@ -128,10 +137,11 @@ static struct dbs_tuners {
 	.hotplug_up_usage = 50,
 	.hotplug_down_usage = 20,
 	.overestimate_khz = 25000,
+	.interaction_hack = 1,
+	.interaction_superhack = 1,
 	.interaction_overestimate_khz = 125000,
 	.interaction_return_usage = 25,
-	.interaction_return_cycles = 3, /* = 30ms ~= 2 frames */
-	.interaction_hack = 1,
+	.interaction_return_cycles = 5, /* = 50ms = 3 frames */
 #endif
 };
 // }}}
@@ -240,10 +250,11 @@ i_am_lazy(hotplug_up_load, 0, 10)
 i_am_lazy(hotplug_up_usage, 0, 100)
 i_am_lazy(hotplug_down_usage, 0, 100)
 i_am_lazy(overestimate_khz, 0, 1000000)
+i_am_lazy(interaction_hack, 0, 1)
+i_am_lazy(interaction_superhack, 0, 1)
 i_am_lazy(interaction_overestimate_khz, 0, 1000000)
 i_am_lazy(interaction_return_usage, 0, 100)
 i_am_lazy(interaction_return_cycles, 0, 100)
-i_am_lazy(interaction_hack, 0, 1)
 
 static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b,
 				   const char *buf, size_t count)
@@ -304,10 +315,11 @@ static struct attribute *dbs_attributes[] = {
 	&hotplug_up_usage.attr,
 	&hotplug_down_usage.attr,
 	&overestimate_khz.attr,
+	&interaction_hack.attr,
+	&interaction_superhack.attr,
 	&interaction_overestimate_khz.attr,
 	&interaction_return_usage.attr,
 	&interaction_return_cycles.attr,
-	&interaction_hack.attr,
 	NULL
 };
 
@@ -368,25 +380,25 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* Apparently, this happens. */
 	if (idle_time > wall_time) return;
 
+	/* Assume we've only run for a small fraction of a second. */
 	load = policy->cur / wall_time * (wall_time - idle_time);
 
 	/* Interaction hack go! */
 	if (this_dbs_info->is_interactive) {
 		/* Avoid dropping frequency instantly by using the greater of the last
 		 * two samples.  For the 10ms interactive sampling rate, this means our
-		 * samples go across a vsync, and we should leave enough CPU to
+		 * samples go across two vsyncs, so we should leave enough CPU to
 		 * smoothly render each frame.
 		 */
 		if (this_dbs_info->last_load > load) {
 			unsigned int temp_load = load;
 			load = this_dbs_info->last_load;
-			this_dbs_info->last_load =
-				//(temp_load + this_dbs_info->last_load) / 2;
-				temp_load;
+			this_dbs_info->last_load = temp_load;
 		} else this_dbs_info->last_load = load;
 
-		/* If the input drivers have released us, start checking if we can
-		 * return to non-interactive mode.
+		/* If the input drivers have released interaction, start checking if we
+		 * can return to non-interactive mode.  Don't do it immediately, since
+		 * there is probably an animation playing.
 		 */
 		if (this_dbs_info->is_interactive == 2) {
 			if (load < policy->max * dbs_tuners_ins.interaction_return_usage / 100) {
@@ -402,11 +414,28 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			printk(KERN_DEBUG "freelunch: deferred noninteractive %u cycles.\n",
 				this_dbs_info->deferred_return);
 
-		this_dbs_info->requested_freq = 1000 * load / policy->cur *
-			(policy->cur + dbs_tuners_ins.interaction_overestimate_khz) / 1000;
+		/* Bump frequency, ignoring mid-stepping values. */
+		if (dbs_tuners_ins.interaction_superhack)
+			this_dbs_info->requested_freq = load + dbs_tuners_ins.interaction_overestimate_khz;
+		else
+			this_dbs_info->requested_freq = (policy->cur + dbs_tuners_ins.interaction_overestimate_khz)
+				/ wall_time * (wall_time - idle_time);
+		/* Round up to the next stepping. */
+		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
+			CPUFREQ_RELATION_L);
 	} else {
-		this_dbs_info->requested_freq = 1000 * load / policy->cur *
-			(policy->cur + dbs_tuners_ins.overestimate_khz) / 1000;
+		/* Bump frequency, allowing mid-stepping values. */
+		this_dbs_info->requested_freq += (policy->cur + dbs_tuners_ins.overestimate_khz)
+			/ wall_time * (wall_time - idle_time);
+		this_dbs_info->requested_freq -= policy->cur;
+		/* Bounds-check the new frequency */
+		if (this_dbs_info->requested_freq > policy->max)
+			this_dbs_info->requested_freq = policy->max;
+		else if (this_dbs_info->requested_freq < policy->min)
+			this_dbs_info->requested_freq = policy->min;
+		/* Round down to the next stepping */
+		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
+			CPUFREQ_RELATION_H);
 	}
 
 	/* Hotplug? */
@@ -426,10 +455,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			}
 		} else this_dbs_info->hotplug_cycle = 0;
 	}
-
-	/* Set! */
-	__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
-		CPUFREQ_RELATION_L);
 }
 // }}}
 // {{{2 cpufreq crap
@@ -542,6 +567,9 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			cpufreq_unregister_notifier(
 					&dbs_cpufreq_notifier_block,
 					CPUFREQ_TRANSITION_NOTIFIER);
+
+		/* Disable interactivity */
+		this_dbs_info->is_interactive = 0;
 
 		mutex_unlock(&dbs_mutex);
 		if (!dbs_enable)
