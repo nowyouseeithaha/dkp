@@ -62,8 +62,11 @@ struct cpu_dbs_info_s {
 	struct mutex timer_mutex;
 
 	int hotplug_cycle;
+
+	/* Interaction hack stuff */
 	unsigned int last_load;
 	int is_interactive;
+	unsigned int defer_cycles;
 	unsigned int deferred_return;
 };
 static DEFINE_PER_CPU(struct cpu_dbs_info_s, cs_cpu_dbs_info);
@@ -92,7 +95,8 @@ static struct dbs_tuners {
 	unsigned int hotplug_down_usage;
 	unsigned int overestimate_khz;
 	unsigned int interaction_overestimate_khz;
-	unsigned int interaction_threshold;
+	unsigned int interaction_return_usage;
+	unsigned int interaction_return_cycles;
 	unsigned int interaction_hack;
 } dbs_tuners_ins = {
 #if 0
@@ -106,7 +110,8 @@ static struct dbs_tuners {
 	.hotplug_down_usage = 10,
 	.overestimate_khz = 125000,
 	.interaction_overestimate_khz = 250000,
-	.interaction_threshold = 5,
+	.interaction_return_usage = 15,
+	.interaction_return_cycles = 5,
 	.interaction_hack = 1,
 #elif 1
 	/* Crazy-conservative */
@@ -119,7 +124,8 @@ static struct dbs_tuners {
 	.hotplug_down_usage = 20,
 	.overestimate_khz = 25000,
 	.interaction_overestimate_khz = 125000,
-	.interaction_threshold = 15,
+	.interaction_return_usage = 25,
+	.interaction_return_cycles = 3, /* = 30ms ~= 2 frames */
 	.interaction_hack = 1,
 #endif
 };
@@ -355,10 +361,16 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* Apparently, this happens. */
 	if (idle_time > wall_time) return;
 
-	/* Use an accurate load estimate for hotplug, and overestimate for freq */
 	load = policy->cur / wall_time * (wall_time - idle_time);
 
 	if (this_dbs_info->is_interactive) {
+		/* Interaction hack go! */
+
+		/* Avoid dropping frequency instantly by using the greater of the last
+		 * two samples.  For the 10ms interactive sampling rate, this means our
+		 * samples go across a vsync, and we should leave enough CPU to
+		 * smoothly render each frame.
+		 */
 		if (this_dbs_info->last_load > load) {
 			unsigned int temp_load = load;
 			load = this_dbs_info->last_load;
@@ -366,11 +378,18 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 				//(temp_load + this_dbs_info->last_load) / 2;
 				temp_load;
 		} else this_dbs_info->last_load = load;
-		if (this_dbs_info->is_interactive == 2 &&
-			load < policy->max * dbs_tuners_ins.interaction_threshold / 100)
-			this_dbs_info->is_interactive = 0;
 
-		/* Print stats */
+		/* If the input drivers have released us, start checking if we can
+		 * return to non-interactive mode.
+		 */
+		if (this_dbs_info->is_interactive == 2) {
+			if (load < policy->max * dbs_tuners_ins.interaction_return_usage / 100) {
+				if (this_dbs_info->defer_cycles++ >= dbs_tuners_ins.interaction_return_usage)
+					this_dbs_info->is_interactive = 0;
+			} else this_dbs_info->defer_cycles = 0;
+		}
+
+		/* Print deferral stats */
 		if (this_dbs_info->is_interactive == 2)
 			this_dbs_info->deferred_return++;
 		else if (this_dbs_info->is_interactive == 0)
@@ -563,6 +582,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		/* Allow dropping out of interaction */
 		this_dbs_info->is_interactive = 2;
 		this_dbs_info->deferred_return = 0;
+		this_dbs_info->defer_cycles = 0;
 
 		break;
 	}
