@@ -27,7 +27,10 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 
-/* Mutex spam */
+/* Mutex spam
+ * These shouldn't be needed anymore.  It seems like if we don't dereference
+ * null pointers willy-nilly, we have fewer problems.
+ */
 #if 0
 #define _mutex_lock(m) \
 /*printk(KERN_DEBUG "%s waiting on timer_mutex\n", __func__); */\
@@ -93,14 +96,16 @@ static struct dbs_tuners {
 	unsigned int hotplug_up_load;
 	unsigned int hotplug_up_usage;
 	unsigned int hotplug_down_usage;
+
 	unsigned int overestimate_khz;
+
 	unsigned int interaction_overestimate_khz;
 	unsigned int interaction_return_usage;
 	unsigned int interaction_return_cycles;
 	unsigned int interaction_hack;
 } dbs_tuners_ins = {
 #if 0
-	/* Crazy-aggressive */
+	/* Pointlessly aggressive */
 	.sampling_rate = 20000,
 	.ignore_nice = 0,
 	.hotplug_up_cycles = 2,
@@ -114,7 +119,7 @@ static struct dbs_tuners {
 	.interaction_return_cycles = 5,
 	.interaction_hack = 1,
 #elif 1
-	/* Crazy-conservative */
+	/* Pretty reasonable defaults */
 	.sampling_rate = 25000,
 	.ignore_nice = 0,
 	.hotplug_up_cycles = 3,
@@ -236,7 +241,8 @@ i_am_lazy(hotplug_up_usage, 0, 100)
 i_am_lazy(hotplug_down_usage, 0, 100)
 i_am_lazy(overestimate_khz, 0, 1000000)
 i_am_lazy(interaction_overestimate_khz, 0, 1000000)
-i_am_lazy(interaction_threshold, 0, 100)
+i_am_lazy(interaction_return_usage, 0, 100)
+i_am_lazy(interaction_return_cycles, 0, 100)
 i_am_lazy(interaction_hack, 0, 1)
 
 static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b,
@@ -299,7 +305,8 @@ static struct attribute *dbs_attributes[] = {
 	&hotplug_down_usage.attr,
 	&overestimate_khz.attr,
 	&interaction_overestimate_khz.attr,
-	&interaction_threshold.attr,
+	&interaction_return_usage.attr,
+	&interaction_return_cycles.attr,
 	&interaction_hack.attr,
 	NULL
 };
@@ -330,8 +337,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* Calculate load for this processor only.  The assumption is that we're
 	 * running on an aSMP processor where each core has its own instance.
 	 *
-	 * XXX To use this on non-Krait processors, it would be wise to wrap this
-	 * in the usual for_each_cpu loop and rethink the load estimation.
+	 * XXX This will not work on processors with linked frequencies, since they
+	 * have multiple cores per policy.
 	 */
 	policy = this_dbs_info->cur_policy;
 
@@ -363,9 +370,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	load = policy->cur / wall_time * (wall_time - idle_time);
 
+	/* Interaction hack go! */
 	if (this_dbs_info->is_interactive) {
-		/* Interaction hack go! */
-
 		/* Avoid dropping frequency instantly by using the greater of the last
 		 * two samples.  For the 10ms interactive sampling rate, this means our
 		 * samples go across a vsync, and we should leave enough CPU to
@@ -579,10 +585,12 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		break;
 
 	case CPUFREQ_GOV_NOINTERACT:
-		/* Allow dropping out of interaction */
-		this_dbs_info->is_interactive = 2;
-		this_dbs_info->deferred_return = 0;
-		this_dbs_info->defer_cycles = 0;
+		if (this_dbs_info->is_interactive && dbs_tuners_ins.interaction_hack) {
+			/* Allow dropping out of interaction */
+			this_dbs_info->is_interactive = 2;
+			this_dbs_info->deferred_return = 0;
+			this_dbs_info->defer_cycles = 0;
+		}
 
 		break;
 	}
