@@ -64,6 +64,7 @@ struct cpu_dbs_info_s {
 	int hotplug_cycle;
 	unsigned int last_load;
 	int is_interactive;
+	unsigned int deferred_return;
 };
 static DEFINE_PER_CPU(struct cpu_dbs_info_s, cs_cpu_dbs_info);
 
@@ -358,15 +359,24 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	load = policy->cur / wall_time * (wall_time - idle_time);
 
 	if (this_dbs_info->is_interactive) {
-		unsigned int temp_load = load;
 		if (this_dbs_info->last_load > load) {
+			unsigned int temp_load = load;
 			load = this_dbs_info->last_load;
 			this_dbs_info->last_load =
-				(temp_load + this_dbs_info->last_load) / 2;
+				//(temp_load + this_dbs_info->last_load) / 2;
+				temp_load;
 		} else this_dbs_info->last_load = load;
 		if (this_dbs_info->is_interactive == 2 &&
 			load < policy->max * dbs_tuners_ins.interaction_threshold / 100)
 			this_dbs_info->is_interactive = 0;
+
+		/* Print stats */
+		if (this_dbs_info->is_interactive == 2)
+			this_dbs_info->deferred_return++;
+		else if (this_dbs_info->is_interactive == 0)
+			printk(KERN_DEBUG "freelunch: deferred noninteractive %u cycles.\n",
+				this_dbs_info->deferred_return);
+
 		this_dbs_info->requested_freq = 1000 * load / policy->cur *
 			(policy->cur + dbs_tuners_ins.interaction_overestimate_khz) / 1000;
 	} else {
@@ -552,6 +562,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 	case CPUFREQ_GOV_NOINTERACT:
 		/* Allow dropping out of interaction */
 		this_dbs_info->is_interactive = 2;
+		this_dbs_info->deferred_return = 0;
 
 		break;
 	}
