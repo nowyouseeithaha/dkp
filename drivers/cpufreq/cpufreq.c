@@ -1840,8 +1840,6 @@ void cpufreq_set_interactivity(int on, int idbit) {
 		pressids &= ~(1 << idbit);
 		if (pressids) return;
 	}
-	/*printk(KERN_DEBUG "cpufreq: setting interact %i for id %i\n",
-		pressids, idbit);*/
 	/* Inform all available policies */
 	for_each_online_cpu(j) {
 		struct cpufreq_policy *pol;
@@ -1850,9 +1848,10 @@ void cpufreq_set_interactivity(int on, int idbit) {
 			printk(KERN_DEBUG "policy for cpu %u is null\n", j);
 			continue;
 		}
-		//__cpufreq_governor(pol, 
-		// Bypass __cpufreq_governor() crap
-		policy->governor->governor(pol,
+		/* Call governor directly, without __cpufreq_governor()'s
+		 * initializing stuff that doesn't apply here.
+		 */
+		pol->governor->governor(pol,
 			pressids ? CPUFREQ_GOV_INTERACT : CPUFREQ_GOV_NOINTERACT);
 	}
 }
