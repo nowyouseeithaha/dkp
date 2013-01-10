@@ -136,11 +136,11 @@ static struct dbs_tuners {
 	.hotplug_up_load = 3,
 	.hotplug_up_usage = 50,
 	.hotplug_down_usage = 20,
-	.overestimate_khz = 25000,
+	.overestimate_khz = 15000,
 	.interaction_hack = 1,
 	.interaction_superhack = 1,
 	.interaction_overestimate_khz = 125000,
-	.interaction_return_usage = 25,
+	.interaction_return_usage = 20,
 	.interaction_return_cycles = 5, /* = 50ms = 3 frames */
 #endif
 };
@@ -385,15 +385,30 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	/* Interaction hack go! */
 	if (this_dbs_info->is_interactive) {
+		unsigned int int_load = load;
 		/* Avoid dropping frequency instantly by using the greater of the last
 		 * two samples.  For the 10ms interactive sampling rate, this means our
 		 * samples go across two vsyncs, so we should leave enough CPU to
 		 * smoothly render each frame.
 		 */
 		if (this_dbs_info->last_load > load) {
-			unsigned int temp_load = load;
-			load = this_dbs_info->last_load;
-			this_dbs_info->last_load = temp_load;
+			//unsigned int temp_load = load;
+			//load = this_dbs_info->last_load;
+			int_load = this_dbs_info->last_load;
+			this_dbs_info->last_load = load;
+			if (dbs_tuners_ins.interaction_superhack) {
+				//this_dbs_info->last_load = (load + temp_load) / 2;
+				/* With superhack, we're guaranteed to have at least .i_o_khz
+				 * excess if we're loaded less than the previous sample, and
+				 * we'll add .i_o_khz onto frequency later.
+				 */
+				if (this_dbs_info->last_load > dbs_tuners_ins.interaction_overestimate_khz)
+					this_dbs_info->last_load -= dbs_tuners_ins.interaction_overestimate_khz * 2;
+				else
+					this_dbs_info->last_load = 0;
+			} else
+				//this_dbs_info->last_load = temp_load;
+				this_dbs_info->last_load = int_load;
 		} else this_dbs_info->last_load = load;
 
 		/* If the input drivers have released interaction, start checking if we
@@ -416,10 +431,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 		/* Bump frequency, ignoring mid-stepping values. */
 		if (dbs_tuners_ins.interaction_superhack)
-			this_dbs_info->requested_freq = load + dbs_tuners_ins.interaction_overestimate_khz;
+			this_dbs_info->requested_freq = int_load + dbs_tuners_ins.interaction_overestimate_khz;
 		else
+			/*
 			this_dbs_info->requested_freq = (policy->cur + dbs_tuners_ins.interaction_overestimate_khz)
 				/ wall_time * (wall_time - idle_time);
+			*/
+			this_dbs_info->requested_freq = 1000 * int_load / policy->cur *
+				(policy->cur + dbs_tuners_ins.interaction_overestimate_khz) / 1000;
 		/* Round up to the next stepping. */
 		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
 			CPUFREQ_RELATION_L);
@@ -441,7 +460,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* Hotplug? */
 	if (num_online_cpus() == 1) {
 		if (nr_running() >= dbs_tuners_ins.hotplug_up_load) {
-			if (this_dbs_info->hotplug_cycle++ >= dbs_tuners_ins.hotplug_up_cycles &&
+			if ((this_dbs_info->hotplug_cycle++ >= dbs_tuners_ins.hotplug_up_cycles /*||
+				(dbs_tuners_ins.interaction_superhack && this_dbs_info->is_interactive)*/) &&
 				load > policy->max * dbs_tuners_ins.hotplug_up_usage / 100) {
 				queue_work_on(0, hotplug_wq, &cpu_up_work);
 				this_dbs_info->hotplug_cycle = 0;
