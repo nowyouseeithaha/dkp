@@ -107,7 +107,7 @@ static struct dbs_tuners {
 	unsigned int overestimate_khz;
 
 	unsigned int interaction_hack;
-	unsigned int interaction_superhack;
+	unsigned int interaction_hack_has_teeth;
 	unsigned int interaction_overestimate_khz;
 	unsigned int interaction_return_usage;
 	unsigned int interaction_return_cycles;
@@ -123,7 +123,7 @@ static struct dbs_tuners {
 	.hotplug_down_usage = 10,
 	.overestimate_khz = 125000,
 	.interaction_hack = 1,
-	.interaction_superhack = 1,
+	.interaction_hack_has_teeth = 1,
 	.interaction_overestimate_khz = 250000,
 	.interaction_return_usage = 15,
 	.interaction_return_cycles = 10,
@@ -131,16 +131,16 @@ static struct dbs_tuners {
 	/* Pretty reasonable defaults */
 	.sampling_rate = 25000,
 	.ignore_nice = 0,
-	.hotplug_up_cycles = 3,
+	.hotplug_up_cycles = 4,
 	.hotplug_down_cycles = 1,
-	.hotplug_up_load = 3,
-	.hotplug_up_usage = 50,
+	.hotplug_up_load = 2,
+	.hotplug_up_usage = 50, /* 60? */
 	.hotplug_down_usage = 20,
-	.overestimate_khz = 15000,
+	.overestimate_khz = 35000,
 	.interaction_hack = 1,
-	.interaction_superhack = 1,
+	.interaction_hack_has_teeth = 1,
 	.interaction_overestimate_khz = 125000,
-	.interaction_return_usage = 20,
+	.interaction_return_usage = 25,
 	.interaction_return_cycles = 10, /* = 100ms = 6 frames = a lot :( */
 #endif
 };
@@ -251,7 +251,7 @@ i_am_lazy(hotplug_up_usage, 0, 100)
 i_am_lazy(hotplug_down_usage, 0, 100)
 i_am_lazy(overestimate_khz, 0, 1000000)
 i_am_lazy(interaction_hack, 0, 1)
-i_am_lazy(interaction_superhack, 0, 1)
+i_am_lazy(interaction_hack_has_teeth, 0, 1)
 i_am_lazy(interaction_overestimate_khz, 0, 1000000)
 i_am_lazy(interaction_return_usage, 0, 100)
 i_am_lazy(interaction_return_cycles, 0, 100)
@@ -316,7 +316,7 @@ static struct attribute *dbs_attributes[] = {
 	&hotplug_down_usage.attr,
 	&overestimate_khz.attr,
 	&interaction_hack.attr,
-	&interaction_superhack.attr,
+	&interaction_hack_has_teeth.attr,
 	&interaction_overestimate_khz.attr,
 	&interaction_return_usage.attr,
 	&interaction_return_cycles.attr,
@@ -400,7 +400,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (this_dbs_info->last_load > load) {
 			int_load = this_dbs_info->last_load;
 			//this_dbs_info->last_load = load;
-			if (dbs_tuners_ins.interaction_superhack) {
+			if (dbs_tuners_ins.interaction_hack_has_teeth) {
 #if 0
 				this_dbs_info->last_load = (load + temp_load) / 2;
 #elif 0
@@ -416,10 +416,10 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 					this_dbs_info->last_load = 0;
 #elif 1
 				/* Filter substantially lower load readings.
-				 * TODO: This should be tunable.
+				 * TODO: This should be tunable.  Or should it?
 				 */
 				this_dbs_info->last_load -= 1000 * load / policy->cur *
-					(this_dbs_info->last_load - load) / 667;
+					(this_dbs_info->last_load - load) / 1000;
 #endif
 			} else this_dbs_info->last_load = load;
 		} else this_dbs_info->last_load = load;
@@ -443,7 +443,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 				this_dbs_info->deferred_return);
 
 		/* Bump frequency, ignoring mid-stepping values. */
-		if (dbs_tuners_ins.interaction_superhack)
+		if (dbs_tuners_ins.interaction_hack_has_teeth)
 			this_dbs_info->requested_freq = int_load + dbs_tuners_ins.interaction_overestimate_khz;
 		else
 			this_dbs_info->requested_freq = 1000 * int_load / policy->cur *
@@ -470,7 +470,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	if (num_online_cpus() == 1) {
 		if (nr_running() >= dbs_tuners_ins.hotplug_up_load) {
 			if ((this_dbs_info->hotplug_cycle++ >= dbs_tuners_ins.hotplug_up_cycles /*||
-				(dbs_tuners_ins.interaction_superhack && this_dbs_info->is_interactive)*/) &&
+				(dbs_tuners_ins.interaction_hack_has_teeth && this_dbs_info->is_interactive)*/) &&
 				load > policy->max * dbs_tuners_ins.hotplug_up_usage / 100) {
 				queue_work_on(0, hotplug_wq, &cpu_up_work);
 				this_dbs_info->hotplug_cycle = 0;
