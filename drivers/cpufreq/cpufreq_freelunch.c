@@ -126,7 +126,7 @@ static struct dbs_tuners {
 	.interaction_superhack = 1,
 	.interaction_overestimate_khz = 250000,
 	.interaction_return_usage = 15,
-	.interaction_return_cycles = 5,
+	.interaction_return_cycles = 10,
 #elif 1
 	/* Pretty reasonable defaults */
 	.sampling_rate = 25000,
@@ -141,7 +141,7 @@ static struct dbs_tuners {
 	.interaction_superhack = 1,
 	.interaction_overestimate_khz = 125000,
 	.interaction_return_usage = 20,
-	.interaction_return_cycles = 5, /* = 50ms = 3 frames */
+	.interaction_return_cycles = 10, /* = 100ms = 6 frames = a lot :( */
 #endif
 };
 // }}}
@@ -380,6 +380,12 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* Apparently, this happens. */
 	if (idle_time > wall_time) return;
 
+	/* Not needed, but why not? */
+	if (wall_time > 1000) {
+		wall_time /= 100;
+		idle_time /= 100;
+	}
+
 	/* Assume we've only run for a small fraction of a second. */
 	load = policy->cur / wall_time * (wall_time - idle_time);
 
@@ -392,23 +398,30 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		 * smoothly render each frame.
 		 */
 		if (this_dbs_info->last_load > load) {
-			//unsigned int temp_load = load;
-			//load = this_dbs_info->last_load;
 			int_load = this_dbs_info->last_load;
-			this_dbs_info->last_load = load;
+			//this_dbs_info->last_load = load;
 			if (dbs_tuners_ins.interaction_superhack) {
-				//this_dbs_info->last_load = (load + temp_load) / 2;
-				/* With superhack, we're guaranteed to have at least .i_o_khz
-				 * excess if we're loaded less than the previous sample, and
-				 * we'll add .i_o_khz onto frequency later.
+#if 0
+				this_dbs_info->last_load = (load + temp_load) / 2;
+#elif 0
+				/* Rather than store our current load, we drop last_load by one
+				 * increment.  We're already guaranteed to have at least this
+				 * much excess, and by ramping down instead of dropping,
+				 * we're less likely to starve threads that are momentarily
+				 * sleeping.  Net result: animations play more smoothly.
 				 */
 				if (this_dbs_info->last_load > dbs_tuners_ins.interaction_overestimate_khz)
-					this_dbs_info->last_load -= dbs_tuners_ins.interaction_overestimate_khz * 2;
+					this_dbs_info->last_load -= dbs_tuners_ins.interaction_overestimate_khz;
 				else
 					this_dbs_info->last_load = 0;
-			} else
-				//this_dbs_info->last_load = temp_load;
-				this_dbs_info->last_load = int_load;
+#elif 1
+				/* Filter substantially lower load readings.
+				 * TODO: This should be tunable.
+				 */
+				this_dbs_info->last_load -= 1000 * load / policy->cur *
+					(this_dbs_info->last_load - load) / 667;
+#endif
+			} else this_dbs_info->last_load = load;
 		} else this_dbs_info->last_load = load;
 
 		/* If the input drivers have released interaction, start checking if we
@@ -433,10 +446,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (dbs_tuners_ins.interaction_superhack)
 			this_dbs_info->requested_freq = int_load + dbs_tuners_ins.interaction_overestimate_khz;
 		else
-			/*
-			this_dbs_info->requested_freq = (policy->cur + dbs_tuners_ins.interaction_overestimate_khz)
-				/ wall_time * (wall_time - idle_time);
-			*/
 			this_dbs_info->requested_freq = 1000 * int_load / policy->cur *
 				(policy->cur + dbs_tuners_ins.interaction_overestimate_khz) / 1000;
 		/* Round up to the next stepping. */
