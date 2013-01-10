@@ -397,13 +397,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		 * samples go across two vsyncs, so we should leave enough CPU to
 		 * smoothly render each frame.
 		 */
+#if 0
 		if (this_dbs_info->last_load > load) {
 			int_load = this_dbs_info->last_load;
 			//this_dbs_info->last_load = load;
 			if (dbs_tuners_ins.interaction_hack_has_teeth) {
-#if 0
+# if 0
 				this_dbs_info->last_load = (load + temp_load) / 2;
-#elif 0
+# elif 0
 				/* Rather than store our current load, we drop last_load by one
 				 * increment.  We're already guaranteed to have at least this
 				 * much excess, and by ramping down instead of dropping,
@@ -414,15 +415,42 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 					this_dbs_info->last_load -= dbs_tuners_ins.interaction_overestimate_khz;
 				else
 					this_dbs_info->last_load = 0;
-#elif 1
+# elif 1
 				/* Filter substantially lower load readings.
-				 * TODO: This should be tunable.  Or should it?
+				 * Probably not great for battery, since it won't drop much at zero load.
 				 */
 				this_dbs_info->last_load -= 1000 * load / policy->cur *
 					(this_dbs_info->last_load - load) / 1000;
-#endif
+# endif
 			} else this_dbs_info->last_load = load;
 		} else this_dbs_info->last_load = load;
+#elif 0
+		if (load > this_dbs_info->last_load) {
+			/* Load is increasing -- store load */
+			this_dbs_info->last_load = load;
+		} else if (load > policy->cur - dbs_tuners_ins.interaction_overestimate_khz) {
+			/* Load is rebounding -- recall load */
+			int_load = this_dbs_info->last_load;
+		} else {
+			/* Load is decreasing */
+			this_dbs_info->last_load = load;
+		}
+#elif 0
+		if (load < policy->cur - dbs_tuners_ins.interaction_overestimate_khz * 2) {
+			/* Dropping freq.  Record a rebound point. */
+			this_dbs_info->last_load = load;
+		} else if (load > policy->cur - dbs_tuners_ins.interaction_overestimate_khz &&
+			this_dbs_info->last_load > load) {
+			/* Increasing freq.  Restore rebound if available. */
+			int_load = this_dbs_info->last_load;
+		} /* else {
+			// Not changing dramatically or no rebound point.
+		} */
+#elif 1
+		int_load = max(load, this_dbs_info->last_load);
+		this_dbs_info->last_load = load;
+#endif
+			
 
 		/* If the input drivers have released interaction, start checking if we
 		 * can return to non-interactive mode.  Don't do it immediately, since
@@ -643,17 +671,12 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		break;
 
 	case CPUFREQ_GOV_NOINTERACT:
-<<<<<<< HEAD
-		/* Allow dropping out of interaction */
-		this_dbs_info->is_interactive = 2;
-=======
 		if (this_dbs_info->is_interactive && dbs_tuners_ins.interaction_hack) {
 			/* Allow dropping out of interaction */
 			this_dbs_info->is_interactive = 2;
 			this_dbs_info->deferred_return = 0;
 			this_dbs_info->defer_cycles = 0;
 		}
->>>>>>> touchinteract2
 
 		break;
 	}
