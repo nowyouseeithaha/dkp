@@ -463,7 +463,9 @@ void mdp4_overlay2_done_wfd(struct mdp_dma_data *dma)
 	vsync_irq_disable(INTR_OVERLAY2_DONE, MDP_OVERLAY2_TERM);
 	vctrl->ov_done++;
 	complete(&vctrl->ov_comp);
+	// XXX I don't know why this is scheduled, and I don't care.
 	schedule_work(&vctrl->clk_work);
+	//mdp_clk_ctrl(0);
 	pr_debug("%s ovdone interrupt\n", __func__);
 	spin_unlock(&vctrl->spin_lock);
 }

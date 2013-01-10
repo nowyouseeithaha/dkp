@@ -469,7 +469,7 @@ static void set_dvfs_lock(struct mms_ts_info *info, uint32_t on)
 #endif
 #ifdef TOUCH_INTERACTION
 static void do_interaction(struct work_struct *work) {
-	cpufreq_set_interactivity(!!touch_is_pressed);
+	cpufreq_set_interactivity(!!touch_is_pressed, INTERACT_ID_TOUCHSCREEN);
 }
 #endif
 

@@ -8,6 +8,8 @@
  * published by the Free Software Foundation.
  */
 
+#define TOUCH_INTERACTION
+
 #include <linux/module.h>
 
 #include <linux/init.h>
@@ -28,6 +30,10 @@
 #include <linux/string.h>
 #if CONFIG_SEC_DEBUG
 #include <mach/sec_debug.h>
+#endif
+
+#ifdef TOUCH_INTERACTION
+#include <linux/cpufreq.h>
 #endif
 
 struct gpio_button_data {
@@ -366,6 +372,15 @@ static void gpio_keys_report_event(struct gpio_button_data *bdata)
 			}
 		}
 	input_sync(input);
+#ifdef TOUCH_INTERACTION
+	if (button->code == KEY_HOMEPAGE) {
+		/* Bump initially regardless of state.  cpufreq_set_interactivity() will filter. */
+		cpufreq_set_interactivity(1, INTERACT_ID_HARDKEY);
+		/* Unset if this is a release event. */
+		if (!state)
+			cpufreq_set_interactivity(0, INTERACT_ID_HARDKEY);
+	}
+#endif
 }
 
 static void gpio_keys_work_func(struct work_struct *work)
@@ -734,6 +749,9 @@ static int __devexit gpio_keys_remove(struct platform_device *pdev)
 	}
 
 	input_unregister_device(input);
+#ifdef TOUCH_INTERACTION
+	cpufreq_set_interactivity(0, INTERACT_ID_HARDKEY);
+#endif
 
 	return 0;
 }
@@ -754,6 +772,9 @@ static int gpio_keys_suspend(struct device *dev)
 			}
 		}
 	}
+#ifdef TOUCH_INTERACTION
+	cpufreq_set_interactivity(0, INTERACT_ID_HARDKEY);
+#endif
 	return 0;
 }
 

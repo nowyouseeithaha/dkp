@@ -11,6 +11,7 @@
 
 #define SEC_TOUCHKEY_DEBUG
 /* #define SEC_TOUCHKEY_VERBOSE_DEBUG */
+#define TOUCH_INTERACTION
 
 #include <linux/module.h>
 #include <linux/input.h>
@@ -31,6 +32,10 @@
 #include <linux/workqueue.h>
 #include <linux/leds.h>
 #include <asm/mach-types.h>
+
+#ifdef TOUCH_INTERACTION
+#include <linux/cpufreq.h>
+#endif
 
 #define CYPRESS_GEN		0X00
 #define CYPRESS_FW_VER		0X01
@@ -104,6 +109,15 @@ static void cypress_touchkey_late_resume(struct early_suspend *h);
 
 static int touchkey_led_status;
 static int touchled_cmd_reversed;
+
+/* TOUCH_INTERACTION stuff */
+#ifdef TOUCH_INTERACTION
+static int current_pressed;
+static struct work_struct interaction_work;
+static void do_interaction(struct work_struct *work) {
+	cpufreq_set_interactivity(!!current_pressed, INTERACT_ID_SOFTKEY);
+}
+#endif
 
 static void cypress_touchkey_led_work(struct work_struct *work)
 {
@@ -242,6 +256,11 @@ static irqreturn_t cypress_touchkey_interrupt(int irq, void *dev_id)
 	} else {
 		input_report_key(info->input_dev, info->keycode[code], press);
 		input_sync(info->input_dev);
+#ifdef TOUCH_INTERACTION
+		if (press) current_pressed |= 1 << code;
+		else current_pressed &= ~(1 << code);
+		schedule_work(&interaction_work);
+#endif
 	}
 
 out:
@@ -859,6 +878,10 @@ static int __devinit cypress_touchkey_probe(struct i2c_client *client,
 		goto err_input_dev_alloc;
 	}
 
+#ifdef TOUCH_INTERACTION
+	INIT_WORK(&interaction_work, do_interaction);
+#endif
+
 	info->client = client;
 	info->input_dev = input_dev;
 	info->pdata = client->dev.platform_data;
@@ -1150,6 +1173,10 @@ static int __devexit cypress_touchkey_remove(struct i2c_client *client)
 	input_unregister_device(info->input_dev);
 	input_free_device(info->input_dev);
 	kfree(info);
+#ifdef TOUCH_INTERACTION
+	current_pressed = 0;
+	cpufreq_set_interactivity(0, INTERACT_ID_SOFTKEY);
+#endif
 	return 0;
 }
 
@@ -1165,6 +1192,10 @@ static int cypress_touchkey_suspend(struct device *dev)
 	if (info->pdata->gpio_led_en)
 		cypress_touchkey_con_hw(info, false);
 	info->power_onoff(0);
+#ifdef TOUCH_INTERACTION
+	current_pressed = 0;
+	cpufreq_set_interactivity(0, INTERACT_ID_SOFTKEY);
+#endif
 	return ret;
 }
 
