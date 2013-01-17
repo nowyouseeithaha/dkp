@@ -54,6 +54,9 @@
 
 unsigned int mDNIe_data[MAX_LUT_SIZE * 3];
 
+/* For brightness scaling */
+static unsigned int color_scaling_factors[3] = { 256, 256, 256 };
+
 int play_speed_1_5;
 #if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_HD_PT) || \
 	defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_WVGA_PT)
@@ -283,6 +286,7 @@ void lut_tune(int num, unsigned int *pLutTable)
 	struct fb_cmap *cmap;
 	struct msm_fb_data_type *mfd;
 	uint32_t out;
+	unsigned long tmp;
 
 	/*for final assignment*/
 	u16 r_1, g_1, b_1;
@@ -316,27 +320,31 @@ void lut_tune(int num, unsigned int *pLutTable)
 		printk(KERN_ERR "can't malloc cmap!");
 		goto fail_rest;
 	}
+
 	r = cmap->red;
 	g = cmap->green;
 	b = cmap->blue;
-
-	j = 0;
-	DPRINT("cmap->len %d\n", cmap->len);
 	/* Assigning the cmap */
-	for (i = 0; i < cmap->len; i++) {
-		*r++ = pLutTable[j++];
-		*g++ = pLutTable[j++];
-		*b++ = pLutTable[j++];
+#define calc(dest, idx) \
+	tmp = pLutTable[j++] * color_scaling_factors[idx]; \
+	dest = tmp / 256 + (tmp & 128 ? 1 : 0);
+	for (i = 0, j = 0; i < cmap->len; i++) {
+		calc(*r++, 0);
+		calc(*g++, 1);
+		calc(*b++, 2);
 	}
+#undef calc
 
 	/*instead of an ioctl */
 	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
 
-	j = 0;
+	r = cmap->red;
+	g = cmap->green;
+	b = cmap->blue;
 	for (i = 0; i < cmap->len; i++) {
-		r_1 = pLutTable[j++];
-		g_1 = pLutTable[j++];
-		b_1 = pLutTable[j++];
+		r_1 = *r++;
+		g_1 = *g++;
+		b_1 = *b++;
 
 #ifdef CONFIG_FB_MSM_MDP40
 		MDP_OUTP(MDP_BASE + 0x94800 +
@@ -812,6 +820,39 @@ static DEVICE_ATTR(playspeed, 0664,
 			playspeed_show,
 			playspeed_store);
 
+/* For brightness scaling */
+static ssize_t scaling_factors_show(struct device *dev,
+			struct device_attribute *attr,
+			char *buf)
+{
+	DPRINT("called %s\n", __func__);
+	return sprintf(buf, "%u %u %u\n",
+		color_scaling_factors[0],
+		color_scaling_factors[1],
+		color_scaling_factors[2]);
+}
+
+static ssize_t scaling_factors_store(struct device *dev,
+			struct device_attribute *attr,
+			const char *buf, size_t size)
+{
+	unsigned int r, g, b;
+	int ret;
+	ret = sscanf(buf, "%u %u %u", &r, &g, &b);
+	if (ret != 3)
+		return -EINVAL;
+	if (r > 256 || g > 256 || b > 256)
+		return -EINVAL;
+	color_scaling_factors[0] = r;
+	color_scaling_factors[1] = g;
+	color_scaling_factors[2] = b;
+	mDNIe_Set_Mode(current_mDNIe_Mode);
+	return size;
+}
+static DEVICE_ATTR(scaling_factors, 0664,
+			scaling_factors_show,
+			scaling_factors_store);
+
 void init_mdnie_class(void)
 {
 	mdnie_class = class_create(THIS_MODULE, "mdnie");
@@ -868,6 +909,11 @@ void init_mdnie_class(void)
 		pr_err("Failed to create device file(%s)!=n",
 			dev_attr_playspeed.attr.name);
 
+	if (device_create_file
+		(tune_mdnie_dev, &dev_attr_scaling_factors) < 0)
+		pr_err("Failed to create device file(%s)!=n",
+			dev_attr_scaling_factors.attr.name);
+
 #ifdef MDP4_VIDEO_ENHANCE_TUNING
 	if (device_create_file(tune_mdnie_dev, &dev_attr_tuning) < 0) {
 		pr_err("Failed to create device file(%s)!\n",
@@ -877,4 +923,10 @@ void init_mdnie_class(void)
 
 	s3c_mdnie_start();
 	sharpness_tune(0);
+}
+
+/* Hack! */
+void reenable_mdnie(void) {
+	mDNIe_Set_Mode(current_mDNIe_Mode);
+	mDNIe_set_negative(current_Negative_Mode);
 }

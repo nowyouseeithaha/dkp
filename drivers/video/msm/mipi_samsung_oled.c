@@ -474,6 +474,12 @@ static int mipi_samsung_disp_send_cmd(struct msm_fb_data_type *mfd,
 		;
 	}
 
+#ifdef CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_HD_PT
+	/* Horrible, ugly hack.  But it works. */
+	if (cmd == PANEL_ON)
+		reenable_mdnie();
+#endif
+
 	if (!cmd_size)
 		goto unknown_command;
 
