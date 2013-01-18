@@ -661,9 +661,9 @@ static ssize_t store_UV_mV_table(struct cpufreq_policy *policy,
 		&v[10], &v[11], &v[12], &v[13], &v[14], &v[15], &v[16], &v[17], &v[18],
 		&v[19], &v[20], &v[21], &v[22], &v[23], &v[24]);
 	printk(KERN_DEBUG "cpufreq: UV got %i, wanted 25\n", ret);
-	if (ret == 25) {
+	if (ret == 22) {
 		printk(KERN_DEBUG "cpufreq: setting new UV table\n");
-		acpuclk_update_vdd_table(25, v);
+		acpuclk_update_vdd_table(22, v);
 		return count;
 	} else {
 		printk(KERN_DEBUG "cpufreq: not setting UV table, got %i\n", ret);

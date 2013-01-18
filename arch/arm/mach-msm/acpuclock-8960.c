@@ -70,13 +70,8 @@
 
 #define STBY_KHZ		1
 
-/*
 #define HFPLL_NOMINAL_VDD	1050000
 #define HFPLL_LOW_VDD		 850000
-*/
-/* These should be enough to crash any devices. */
-#define HFPLL_NOMINAL_VDD	900000
-#define HFPLL_LOW_VDD		650000
 #define HFPLL_LOW_VDD_PLL_L_MAX	0x28
 
 #define SECCLKAGD		BIT(4)
@@ -775,9 +770,11 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv2_slow[] = {
 	{ 1, {  1404000, HFPLL, 1, 0, 0x34 }, L2(19), 1237500 },
 	{ 1, {  1458000, HFPLL, 1, 0, 0x36 }, L2(19), 1237500 },
 	{ 1, {  1512000, HFPLL, 1, 0, 0x38 }, L2(19), 1250000 },
+	/*
 	{ 1, {  1566000, HFPLL, 1, 0, 0x3A }, L2(19), 1275000 },
 	{ 1, {  1620000, HFPLL, 1, 0, 0x3C }, L2(19), 1300000 },
 	{ 1, {  1674000, HFPLL, 1, 0, 0x3E }, L2(19), 1300000 },
+	*/
 	{ 0, { 0 } }
 };
 
@@ -805,9 +802,11 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv2_nom[] = {
 	{ 1, {  1404000, HFPLL, 1, 0, 0x34 }, L2(19), 1187500 },
 	{ 1, {  1458000, HFPLL, 1, 0, 0x36 }, L2(19), 1187500 },
 	{ 1, {  1512000, HFPLL, 1, 0, 0x38 }, L2(19), 1200000 },
+	/*
 	{ 1, {  1566000, HFPLL, 1, 0, 0x3A }, L2(19), 1225000 },
 	{ 1, {  1620000, HFPLL, 1, 0, 0x3C }, L2(19), 1250000 },
 	{ 1, {  1674000, HFPLL, 1, 0, 0x3E }, L2(19), 1250000 },
+	*/
 	{ 0, { 0 } }
 };
 
@@ -835,9 +834,11 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv2_fast[] = {
 	{ 1, {  1404000, HFPLL, 1, 0, 0x34 }, L2(19), 1137500 },
 	{ 1, {  1458000, HFPLL, 1, 0, 0x36 }, L2(19), 1137500 },
 	{ 1, {  1512000, HFPLL, 1, 0, 0x38 }, L2(19), 1150000 },
+	/*
 	{ 1, {  1566000, HFPLL, 1, 0, 0x3A }, L2(19), 1175000 },
 	{ 1, {  1620000, HFPLL, 1, 0, 0x3C }, L2(19), 1200000 },
 	{ 1, {  1674000, HFPLL, 1, 0, 0x3E }, L2(19), 1200000 },
+	*/
 	{ 0, { 0 } }
 };
 
@@ -865,9 +866,11 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv2_f3[] = {
 	{ 0, {  1404000, HFPLL, 1, 0, 0x34 }, L2(16), 1112500 },
 	{ 1, {  1458000, HFPLL, 1, 0, 0x36 }, L2(16), 1112500 },
 	{ 1, {  1512000, HFPLL, 1, 0, 0x38 }, L2(16), 1125000 },
+	/*
 	{ 1, {  1566000, HFPLL, 1, 0, 0x3A }, L2(19), 1150000 },
 	{ 1, {  1620000, HFPLL, 1, 0, 0x3C }, L2(19), 1175000 },
 	{ 1, {  1674000, HFPLL, 1, 0, 0x3E }, L2(19), 1175000 },
+	*/
 	{ 0, { 0 } }
 };
 
@@ -1658,7 +1661,6 @@ static struct notifier_block __cpuinitdata acpuclock_cpu_notifier = {
 
 static const int krait_needs_vmin(void)
 {
-/* XXX will cause breakage.
 	switch (read_cpuid_id()) {
 	case 0x511F04D0:
 	case 0x511F04D1:
@@ -1667,17 +1669,14 @@ static const int krait_needs_vmin(void)
 	default:
 		return 0;
 	};
-*/
 	return 0;
 }
 
 static void kraitv2_apply_vmin(struct acpu_level *tbl)
 {
-/* XXX will cause breakage
 	for (; tbl->speed.khz != 0; tbl++)
 		if (tbl->vdd_core < 1150000)
 			tbl->vdd_core = 1150000;
-*/
 	return;
 }
 
@@ -1814,13 +1813,14 @@ static struct acpu_level * __init select_freq_plan(void)
 	} else {
 		BUG();
 	}
+	/*
 	if (krait_needs_vmin())
 		kraitv2_apply_vmin(acpu_freq_tbl);
+	*/
 
 	/* Find the max supported scaling frequency. */
 	for (l = acpu_freq_tbl; l->speed.khz != 0; l++)
-		/* Don't boot at OC freqs. */
-		if (l->use_for_scaling && l->speed.khz <= 1512000)
+		if (l->use_for_scaling) // && l->speed.khz <= 1512000)
 			max_acpu_level = l;
 	BUG_ON(!max_acpu_level);
 	pr_info("Max ACPU freq: %u KHz\n", max_acpu_level->speed.khz);
@@ -1835,19 +1835,19 @@ int acpuclk_update_vdd_table(int num, unsigned int table[]) {
 	mutex_lock(&driver_lock);
 	if (table[0] < table[num-1]) {
 		for (i = 0; i < num; i++, tgt++) {
-			if (!acpu_freq_tbl->vdd_core)
-				break;
-			if (acpu_freq_tbl->speed.khz == STBY_KHZ)
+			if (tgt->speed.khz == STBY_KHZ)
 				tgt++;
-			acpu_freq_tbl->vdd_core = table[i];
+			if (!tgt->vdd_core)
+				break;
+			tgt->vdd_core = table[i] * 1000;
 		}
 	} else {
 		for (i = num; i > 0; i--, tgt++) {
-			if (!acpu_freq_tbl->vdd_core)
+			if (!tgt->vdd_core)
 				break;
-			if (acpu_freq_tbl->speed.khz == STBY_KHZ)
+			if (tgt->speed.khz == STBY_KHZ)
 				tgt++;
-			acpu_freq_tbl->vdd_core = table[i];
+			tgt->vdd_core = table[i] * 1000;
 		}
 	}
 	mutex_unlock(&driver_lock);
