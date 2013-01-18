@@ -144,7 +144,7 @@ static struct scalable scalable_8960[] = {
 			.hfpll_base      = MSM_HFPLL_BASE + 0x200,
 			.aux_clk_sel     = MSM_ACC0_BASE  + 0x014,
 			.l2cpmr_iaddr    = L2CPUCPMR_IADDR,
-			.vreg[VREG_CORE] = { "krait0",     1300000 },
+			.vreg[VREG_CORE] = { "krait0",     1400000 },
 			.vreg[VREG_MEM]  = { "krait0_mem", 1150000,
 					     RPM_VREG_VOTER1,
 					     RPM_VREG_ID_PM8921_L24 },
@@ -162,7 +162,7 @@ static struct scalable scalable_8960[] = {
 			.hfpll_base      = MSM_HFPLL_BASE + 0x300,
 			.aux_clk_sel     = MSM_ACC1_BASE  + 0x014,
 			.l2cpmr_iaddr    = L2CPUCPMR_IADDR,
-			.vreg[VREG_CORE] = { "krait1",     1300000 },
+			.vreg[VREG_CORE] = { "krait1",     1400000 },
 			.vreg[VREG_MEM]  = { "krait0_mem", 1150000,
 					     RPM_VREG_VOTER2,
 					     RPM_VREG_ID_PM8921_L24 },
@@ -845,25 +845,25 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv2_fast[] = {
 static struct acpu_level acpu_freq_tbl_8960_kraitv2_f3[] = {
 	{ 0, { STBY_KHZ, QSB,   0, 0, 0x00 }, L2(0),   850000 },
 	{ 1, {   384000, PLL_8, 0, 2, 0x00 }, L2(1),   850000 },
-	{ 0, {   432000, HFPLL, 2, 0, 0x20 }, L2(7),   875000 },
+	{ 1, {   432000, HFPLL, 2, 0, 0x20 }, L2(7),   875000 },
 	{ 1, {   486000, HFPLL, 2, 0, 0x24 }, L2(7),   875000 },
-	{ 0, {   540000, HFPLL, 2, 0, 0x28 }, L2(7),   900000 },
+	{ 1, {   540000, HFPLL, 2, 0, 0x28 }, L2(7),   900000 },
 	{ 1, {   594000, HFPLL, 1, 0, 0x16 }, L2(7),   900000 },
-	{ 0, {   648000, HFPLL, 1, 0, 0x18 }, L2(7),   925000 },
+	{ 1, {   648000, HFPLL, 1, 0, 0x18 }, L2(7),   925000 },
 	{ 1, {   702000, HFPLL, 1, 0, 0x1A }, L2(7),   925000 },
-	{ 0, {   756000, HFPLL, 1, 0, 0x1C }, L2(7),   975000 },
+	{ 1, {   756000, HFPLL, 1, 0, 0x1C }, L2(7),   975000 },
 	{ 1, {   810000, HFPLL, 1, 0, 0x1E }, L2(7),   975000 },
-	{ 0, {   864000, HFPLL, 1, 0, 0x20 }, L2(7),  1000000 },
+	{ 1, {   864000, HFPLL, 1, 0, 0x20 }, L2(7),  1000000 },
 	{ 1, {   918000, HFPLL, 1, 0, 0x22 }, L2(7),  1000000 },
-	{ 0, {   972000, HFPLL, 1, 0, 0x24 }, L2(7),  1012500 },
+	{ 1, {   972000, HFPLL, 1, 0, 0x24 }, L2(7),  1012500 },
 	{ 1, {  1026000, HFPLL, 1, 0, 0x26 }, L2(7),  1012500 },
-	{ 0, {  1080000, HFPLL, 1, 0, 0x28 }, L2(16), 1050000 },
+	{ 1, {  1080000, HFPLL, 1, 0, 0x28 }, L2(16), 1050000 },
 	{ 1, {  1134000, HFPLL, 1, 0, 0x2A }, L2(16), 1050000 },
-	{ 0, {  1188000, HFPLL, 1, 0, 0x2C }, L2(16), 1075000 },
+	{ 1, {  1188000, HFPLL, 1, 0, 0x2C }, L2(16), 1075000 },
 	{ 1, {  1242000, HFPLL, 1, 0, 0x2E }, L2(16), 1075000 },
-	{ 0, {  1296000, HFPLL, 1, 0, 0x30 }, L2(16), 1100000 },
+	{ 1, {  1296000, HFPLL, 1, 0, 0x30 }, L2(16), 1100000 },
 	{ 1, {  1350000, HFPLL, 1, 0, 0x32 }, L2(16), 1100000 },
-	{ 0, {  1404000, HFPLL, 1, 0, 0x34 }, L2(16), 1112500 },
+	{ 1, {  1404000, HFPLL, 1, 0, 0x34 }, L2(16), 1112500 },
 	{ 1, {  1458000, HFPLL, 1, 0, 0x36 }, L2(16), 1112500 },
 	{ 1, {  1512000, HFPLL, 1, 0, 0x38 }, L2(16), 1125000 },
 	/*
@@ -1878,7 +1878,7 @@ static int __init acpuclk_8960_init(struct acpuclk_soc_data *soc_data)
 {
 	struct acpu_level *max_acpu_level = select_freq_plan();
 
-	regulator_init(max_acpu_level->vdd_core);
+	regulator_init(max_acpu_level->vdd_core + 100000);
 	bus_init(max_acpu_level->l2_level->bw_level);
 
 	init_clock_sources(&scalable[L2], &max_acpu_level->l2_level->speed);
