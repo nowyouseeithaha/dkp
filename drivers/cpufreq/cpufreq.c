@@ -649,6 +649,32 @@ static ssize_t show_scaling_setspeed(struct cpufreq_policy *policy, char *buf)
 	return policy->governor->show_setspeed(policy, buf);
 }
 
+extern int acpuclk_update_vdd_table(int num, unsigned int table[]);
+extern ssize_t acpuclk_show_vdd_table(char *buf);
+static ssize_t store_UV_mV_table(struct cpufreq_policy *policy,
+					const char *buf, size_t count) {
+	unsigned int v[25];
+	int ret;
+	ret = sscanf(buf,
+		"%u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u",
+		&v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9],
+		&v[10], &v[11], &v[12], &v[13], &v[14], &v[15], &v[16], &v[17], &v[18],
+		&v[19], &v[20], &v[21], &v[22], &v[23], &v[24]);
+	printk(KERN_DEBUG "cpufreq: UV got %i, wanted 25\n", ret);
+	if (ret == 25) {
+		printk(KERN_DEBUG "cpufreq: setting new UV table\n");
+		acpuclk_update_vdd_table(25, v);
+		return count;
+	} else {
+		printk(KERN_DEBUG "cpufreq: not setting UV table, got %i\n", ret);
+		return -EINVAL;
+	}
+}
+
+static ssize_t show_UV_mV_table(struct cpufreq_policy *policy, char *buf) {
+	return acpuclk_show_vdd_table(buf);
+}
+
 /**
  * show_scaling_driver - show the current cpufreq HW/BIOS limitation
  */
@@ -679,6 +705,7 @@ cpufreq_freq_attr_rw(scaling_min_freq);
 cpufreq_freq_attr_rw(scaling_max_freq);
 cpufreq_freq_attr_rw(scaling_governor);
 cpufreq_freq_attr_rw(scaling_setspeed);
+cpufreq_freq_attr_rw(UV_mV_table);
 
 static struct attribute *default_attrs[] = {
 	&cpuinfo_min_freq.attr,
@@ -693,6 +720,7 @@ static struct attribute *default_attrs[] = {
 	&scaling_driver.attr,
 	&scaling_available_governors.attr,
 	&scaling_setspeed.attr,
+	&UV_mV_table.attr,
 	NULL
 };
 
@@ -1822,7 +1850,8 @@ static unsigned long freq_limit_start_flag;
 static unsigned int app_min_freq_limit = MIN_FREQ_LIMIT;
 static unsigned int app_max_freq_limit = MAX_FREQ_LIMIT;
 static unsigned int user_min_freq_limit = MIN_FREQ_LIMIT;
-static unsigned int user_max_freq_limit = MAX_FREQ_LIMIT;
+//static unsigned int user_max_freq_limit = MAX_FREQ_LIMIT;
+static unsigned int user_max_freq_limit = 1512000;
 
 /* Notify governors of touch immediately.
  * This may block while mutexes are locked.
