@@ -10,6 +10,15 @@
  * GNU General Public License for more details.
  */
 
+#define ALLOW_OC_STEPS
+#define ALLOW_OC_BUS
+
+#ifdef ALLOW_OC_BUS
+#define MAX_BUS_LVL 7
+#else
+#define MAX_BUS_LVL 6
+#endif
+
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
 #include <linux/kernel.h>
@@ -144,7 +153,7 @@ static struct scalable scalable_8960[] = {
 			.hfpll_base      = MSM_HFPLL_BASE + 0x200,
 			.aux_clk_sel     = MSM_ACC0_BASE  + 0x014,
 			.l2cpmr_iaddr    = L2CPUCPMR_IADDR,
-			.vreg[VREG_CORE] = { "krait0",     1400000 },
+			.vreg[VREG_CORE] = { "krait0",     1300000 },
 			.vreg[VREG_MEM]  = { "krait0_mem", 1150000,
 					     RPM_VREG_VOTER1,
 					     RPM_VREG_ID_PM8921_L24 },
@@ -162,7 +171,7 @@ static struct scalable scalable_8960[] = {
 			.hfpll_base      = MSM_HFPLL_BASE + 0x300,
 			.aux_clk_sel     = MSM_ACC1_BASE  + 0x014,
 			.l2cpmr_iaddr    = L2CPUCPMR_IADDR,
-			.vreg[VREG_CORE] = { "krait1",     1400000 },
+			.vreg[VREG_CORE] = { "krait1",     1300000 },
 			.vreg[VREG_MEM]  = { "krait0_mem", 1150000,
 					     RPM_VREG_VOTER2,
 					     RPM_VREG_ID_PM8921_L24 },
@@ -383,6 +392,9 @@ static struct msm_bus_paths bw_level_tbl[] = {
 	[4] = BW_MBPS(3200), /* At least 400 MHz on bus. */
 	[5] = BW_MBPS(3600), /* At least 450 MHz on bus. */
 	[6] = BW_MBPS(3936), /* At least 492 MHz on bus. */
+#ifdef ALLOW_OC_BUS
+	[7] = BW_MBPS(4264), /* At least 533 MHz on bus. */
+#endif
 };
 
 static struct msm_bus_scale_pdata bus_client_pdata = {
@@ -740,10 +752,10 @@ static struct l2_level l2_freq_tbl_8960_kraitv2[] = {
 	[13] = { { 1026000, HFPLL, 1, 0, 0x26 }, 1150000, 1150000, 6 },
 	[14] = { { 1080000, HFPLL, 1, 0, 0x28 }, 1150000, 1150000, 6 },
 	[15] = { { 1134000, HFPLL, 1, 0, 0x2A }, 1150000, 1150000, 6 },
-	[16] = { { 1188000, HFPLL, 1, 0, 0x2C }, 1150000, 1150000, 6 },
-	[17] = { { 1242000, HFPLL, 1, 0, 0x2E }, 1150000, 1150000, 6 },
-	[18] = { { 1296000, HFPLL, 1, 0, 0x30 }, 1150000, 1150000, 6 },
-	[19] = { { 1350000, HFPLL, 1, 0, 0x32 }, 1150000, 1150000, 6 },
+	[16] = { { 1188000, HFPLL, 1, 0, 0x2C }, 1150000, 1150000, MAX_BUS_LVL },
+	[17] = { { 1242000, HFPLL, 1, 0, 0x2E }, 1150000, 1150000, MAX_BUS_LVL },
+	[18] = { { 1296000, HFPLL, 1, 0, 0x30 }, 1150000, 1150000, MAX_BUS_LVL },
+	[19] = { { 1350000, HFPLL, 1, 0, 0x32 }, 1150000, 1150000, MAX_BUS_LVL },
 };
 
 static struct acpu_level acpu_freq_tbl_8960_kraitv2_slow[] = {
@@ -770,11 +782,11 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv2_slow[] = {
 	{ 1, {  1404000, HFPLL, 1, 0, 0x34 }, L2(19), 1237500 },
 	{ 1, {  1458000, HFPLL, 1, 0, 0x36 }, L2(19), 1237500 },
 	{ 1, {  1512000, HFPLL, 1, 0, 0x38 }, L2(19), 1250000 },
-	/*
+#ifdef ALLOW_OC_STEPS
 	{ 1, {  1566000, HFPLL, 1, 0, 0x3A }, L2(19), 1275000 },
 	{ 1, {  1620000, HFPLL, 1, 0, 0x3C }, L2(19), 1300000 },
 	{ 1, {  1674000, HFPLL, 1, 0, 0x3E }, L2(19), 1300000 },
-	*/
+#endif
 	{ 0, { 0 } }
 };
 
@@ -802,11 +814,11 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv2_nom[] = {
 	{ 1, {  1404000, HFPLL, 1, 0, 0x34 }, L2(19), 1187500 },
 	{ 1, {  1458000, HFPLL, 1, 0, 0x36 }, L2(19), 1187500 },
 	{ 1, {  1512000, HFPLL, 1, 0, 0x38 }, L2(19), 1200000 },
-	/*
+#ifdef ALLOW_OC_STEPS
 	{ 1, {  1566000, HFPLL, 1, 0, 0x3A }, L2(19), 1225000 },
 	{ 1, {  1620000, HFPLL, 1, 0, 0x3C }, L2(19), 1250000 },
 	{ 1, {  1674000, HFPLL, 1, 0, 0x3E }, L2(19), 1250000 },
-	*/
+#endif
 	{ 0, { 0 } }
 };
 
@@ -834,11 +846,11 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv2_fast[] = {
 	{ 1, {  1404000, HFPLL, 1, 0, 0x34 }, L2(19), 1137500 },
 	{ 1, {  1458000, HFPLL, 1, 0, 0x36 }, L2(19), 1137500 },
 	{ 1, {  1512000, HFPLL, 1, 0, 0x38 }, L2(19), 1150000 },
-	/*
+#ifdef ALLOW_OC_STEPS
 	{ 1, {  1566000, HFPLL, 1, 0, 0x3A }, L2(19), 1175000 },
 	{ 1, {  1620000, HFPLL, 1, 0, 0x3C }, L2(19), 1200000 },
 	{ 1, {  1674000, HFPLL, 1, 0, 0x3E }, L2(19), 1200000 },
-	*/
+#endif
 	{ 0, { 0 } }
 };
 
@@ -866,11 +878,11 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv2_f3[] = {
 	{ 1, {  1404000, HFPLL, 1, 0, 0x34 }, L2(16), 1112500 },
 	{ 1, {  1458000, HFPLL, 1, 0, 0x36 }, L2(16), 1112500 },
 	{ 1, {  1512000, HFPLL, 1, 0, 0x38 }, L2(16), 1125000 },
-	/*
+#ifdef ALLOW_OC_STEPS
 	{ 1, {  1566000, HFPLL, 1, 0, 0x3A }, L2(19), 1150000 },
 	{ 1, {  1620000, HFPLL, 1, 0, 0x3C }, L2(19), 1175000 },
 	{ 1, {  1674000, HFPLL, 1, 0, 0x3E }, L2(19), 1175000 },
-	*/
+#endif
 	{ 0, { 0 } }
 };
 
@@ -1659,6 +1671,7 @@ static struct notifier_block __cpuinitdata acpuclock_cpu_notifier = {
 	.notifier_call = acpuclock_cpu_callback,
 };
 
+/*
 static const int krait_needs_vmin(void)
 {
 	switch (read_cpuid_id()) {
@@ -1679,6 +1692,7 @@ static void kraitv2_apply_vmin(struct acpu_level *tbl)
 			tbl->vdd_core = 1150000;
 	return;
 }
+*/
 
 #ifdef CONFIG_SEC_L1_DCACHE_PANIC_CHK
 uint32_t global_sec_pvs_value;
@@ -1820,7 +1834,7 @@ static struct acpu_level * __init select_freq_plan(void)
 
 	/* Find the max supported scaling frequency. */
 	for (l = acpu_freq_tbl; l->speed.khz != 0; l++)
-		if (l->use_for_scaling) // && l->speed.khz <= 1512000)
+		if (l->use_for_scaling)
 			max_acpu_level = l;
 	BUG_ON(!max_acpu_level);
 	pr_info("Max ACPU freq: %u KHz\n", max_acpu_level->speed.khz);
@@ -1839,7 +1853,7 @@ int acpuclk_update_vdd_table(int num, unsigned int table[]) {
 				tgt++;
 			if (!tgt->vdd_core)
 				break;
-			tgt->vdd_core = table[i] * 1000;
+			tgt->vdd_core = table[i]; // * 1000;
 		}
 	} else {
 		for (i = num; i > 0; i--, tgt++) {
@@ -1847,11 +1861,28 @@ int acpuclk_update_vdd_table(int num, unsigned int table[]) {
 				break;
 			if (tgt->speed.khz == STBY_KHZ)
 				tgt++;
-			tgt->vdd_core = table[i] * 1000;
+			tgt->vdd_core = table[i]; // * 1000;
 		}
 	}
 	mutex_unlock(&driver_lock);
 	return 0;
+}
+int acpuclk_update_one_vdd(unsigned int freq, unsigned int uv) {
+	int ret = -EINVAL;
+	struct acpu_level *tgt = acpu_freq_tbl;
+	for (;;) {
+		if (tgt->speed.khz == STBY_KHZ)
+			tgt++;
+		if (!tgt->vdd_core)
+			break;
+		if (tgt->speed.khz == freq) {
+			tgt->vdd_core = uv;
+			ret = 1;
+			break;
+		}
+		tgt++;
+	}
+	return ret;
 }
 ssize_t acpuclk_show_vdd_table(char *buf) {
 	int len;
@@ -1860,8 +1891,12 @@ ssize_t acpuclk_show_vdd_table(char *buf) {
 	mutex_lock(&driver_lock);
 	for (len = 0; tgt->l2_level; tgt++) {
 		if (tgt->speed.khz != STBY_KHZ)
-			len += sprintf(buf + len, "%umhz: %u mV\n",
-				tgt->speed.khz / 1000, tgt->vdd_core / 1000);
+			/* There doesn't seem to be a standard here.
+			 * Kernel Tuner likes "%umhz: %umV" (units optional)
+			 * Some older kernels use "%u: %u"
+			 */
+			len += sprintf(buf + len, "%u: %u\n", //"%umhz: %u\n",
+				tgt->speed.khz /*/ 1000*/, tgt->vdd_core); // / 1000);
 	}
 	mutex_unlock(&driver_lock);
 	return len;
@@ -1878,14 +1913,20 @@ static int __init acpuclk_8960_init(struct acpuclk_soc_data *soc_data)
 {
 	struct acpu_level *max_acpu_level = select_freq_plan();
 
-	regulator_init(max_acpu_level->vdd_core + 100000);
+	pr_alert("Doing regulator_init\n");
+	regulator_init(max_acpu_level->vdd_core);
+	pr_alert("Doing bus_init\n");
 	bus_init(max_acpu_level->l2_level->bw_level);
 
+	pr_alert("Doing init_clock_sources\n");
 	init_clock_sources(&scalable[L2], &max_acpu_level->l2_level->speed);
+	pr_alert("Doing per_cpu_inits\n");
 	on_each_cpu(per_cpu_init, max_acpu_level, true);
 
+	pr_alert("Doing cpufreq_table_init\n");
 	cpufreq_table_init();
 
+	pr_alert("Doing acpuclk_register and stuff\n");
 	acpuclk_register(&acpuclk_8960_data);
 	register_hotcpu_notifier(&acpuclock_cpu_notifier);
 

@@ -465,6 +465,8 @@ static ssize_t store_scaling_max_freq
 	if (ret != 1)
 		return -EINVAL;
 
+	printk(KERN_DEBUG "cpufreq: userspace cunts are touching max!\n"
+		"cpufreq: was %u, setting %u.\n", policy->max, value);
 	if (policy->cpu == BOOT_CPU) {
 		if (value >= MAX_FREQ_LIMIT)
 			cpufreq_set_limit_defered(USER_MAX_STOP, value);
@@ -649,8 +651,9 @@ static ssize_t show_scaling_setspeed(struct cpufreq_policy *policy, char *buf)
 	return policy->governor->show_setspeed(policy, buf);
 }
 
-extern int acpuclk_update_vdd_table(int num, unsigned int table[]);
-extern ssize_t acpuclk_show_vdd_table(char *buf);
+int acpuclk_update_vdd_table(int num, unsigned int table[]);
+int acpuclk_update_one_vdd(unsigned int freq, unsigned int uv);
+ssize_t acpuclk_show_vdd_table(char *buf);
 static ssize_t store_UV_mV_table(struct cpufreq_policy *policy,
 					const char *buf, size_t count) {
 	unsigned int v[25];
@@ -660,13 +663,29 @@ static ssize_t store_UV_mV_table(struct cpufreq_policy *policy,
 		&v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9],
 		&v[10], &v[11], &v[12], &v[13], &v[14], &v[15], &v[16], &v[17], &v[18],
 		&v[19], &v[20], &v[21], &v[22], &v[23], &v[24]);
-	printk(KERN_DEBUG "cpufreq: UV got %i, wanted 25\n", ret);
-	if (ret == 22) {
-		printk(KERN_DEBUG "cpufreq: setting new UV table\n");
-		acpuclk_update_vdd_table(22, v);
+	if (ret == 25) {
+		acpuclk_update_vdd_table(25, v);
 		return count;
 	} else {
-		printk(KERN_DEBUG "cpufreq: not setting UV table, got %i\n", ret);
+		unsigned int freq = 0, volt = 0;
+		char freq_unit[4], volt_unit[3];
+		//ret = sscanf(buf, "%umhz: %u", &v[0], &v[1]);
+		/* Correctly handle units */
+		ret = sscanf(buf, "%u%3s: %u%2s", &freq, &freq_unit, &volt, &volt_unit);
+#define munge(var, uc, lc) \
+	case uc: \
+	case lc: \
+		var *= 1000;
+		switch (freq_unit[0]) {
+		munge(freq, 'G', 'g')
+		munge(freq, 'M', 'm')
+		}
+		switch (volt_unit[0]) {
+		munge(volt, 'M', 'm')
+		}
+#undef munge
+		if (freq && volt && acpuclk_update_one_vdd(freq, volt) == 1)
+			return count;
 		return -EINVAL;
 	}
 }
@@ -1850,8 +1869,7 @@ static unsigned long freq_limit_start_flag;
 static unsigned int app_min_freq_limit = MIN_FREQ_LIMIT;
 static unsigned int app_max_freq_limit = MAX_FREQ_LIMIT;
 static unsigned int user_min_freq_limit = MIN_FREQ_LIMIT;
-//static unsigned int user_max_freq_limit = MAX_FREQ_LIMIT;
-static unsigned int user_max_freq_limit = 1512000;
+static unsigned int user_max_freq_limit = MAX_FREQ_LIMIT;
 
 /* Notify governors of touch immediately.
  * This may block while mutexes are locked.
