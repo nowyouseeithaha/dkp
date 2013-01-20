@@ -1900,14 +1900,14 @@ int acpuclk_update_all_vdd(int adj) {
 	}
 	return 1;
 }
-ssize_t acpuclk_show_vdd_table(char *buf) {
+ssize_t acpuclk_show_vdd_table(char *buf, char *fmt) {
 	int len;
 	struct acpu_level *tgt = acpu_freq_tbl;
 
 	mutex_lock(&driver_lock);
 	for (len = 0; tgt->l2_level; tgt++) {
 		if (tgt->speed.khz != STBY_KHZ)
-			len += sprintf(buf + len, "%u: %u\n", //"%8u: %8u\n",
+			len += sprintf(buf + len, fmt,
 				tgt->speed.khz, tgt->vdd_core);
 	}
 	mutex_unlock(&driver_lock);
