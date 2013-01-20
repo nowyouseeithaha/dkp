@@ -465,8 +465,6 @@ static ssize_t store_scaling_max_freq
 	if (ret != 1)
 		return -EINVAL;
 
-	printk(KERN_DEBUG "cpufreq: userspace cunts are touching max!\n"
-		"cpufreq: was %u, setting %u.\n", policy->max, value);
 	if (policy->cpu == BOOT_CPU) {
 		if (value >= MAX_FREQ_LIMIT)
 			cpufreq_set_limit_defered(USER_MAX_STOP, value);
@@ -653,7 +651,9 @@ static ssize_t show_scaling_setspeed(struct cpufreq_policy *policy, char *buf)
 
 int acpuclk_update_vdd_table(int num, unsigned int table[]);
 int acpuclk_update_one_vdd(unsigned int freq, unsigned int uv);
+int acpuclk_update_all_vdd(int adj);
 ssize_t acpuclk_show_vdd_table(char *buf);
+#if 0
 static ssize_t store_UV_mV_table(struct cpufreq_policy *policy,
 					const char *buf, size_t count) {
 	unsigned int v[25];
@@ -667,27 +667,127 @@ static ssize_t store_UV_mV_table(struct cpufreq_policy *policy,
 		acpuclk_update_vdd_table(25, v);
 		return count;
 	} else {
+		printk(KERN_DEBUG "cpufreq: UV parsing \"%s\"\n", buf);
 		unsigned int freq = 0, volt = 0;
-		char freq_unit[4], volt_unit[3];
+		char freq_unit[5], volt_unit[3];
 		//ret = sscanf(buf, "%umhz: %u", &v[0], &v[1]);
 		/* Correctly handle units */
-		ret = sscanf(buf, "%u%3s: %u%2s", &freq, &freq_unit, &volt, &volt_unit);
+		ret = sscanf(buf, "%u%4s %u%2s", &freq, &freq_unit, &volt, &volt_unit);
 #define munge(var, uc, lc) \
 	case uc: \
 	case lc: \
 		var *= 1000;
 		switch (freq_unit[0]) {
-		munge(freq, 'G', 'g')
+		munge(freq, 'G', 'g') // why?
 		munge(freq, 'M', 'm')
 		}
 		switch (volt_unit[0]) {
 		munge(volt, 'M', 'm')
 		}
 #undef munge
-		if (freq && volt && acpuclk_update_one_vdd(freq, volt) == 1)
-			return count;
+		printk(KERN_DEBUG "cpufreq: UV freq %u volt %u\n", freq, volt);
+		if (freq && volt) {
+			if (cpuclk_update_one_vdd(freq, volt) == 1)
+				return count;
+		} else {
+			ret = sscanf(buf, "%[+-]%i lolwut"
 		return -EINVAL;
 	}
+}
+#endif
+#define FREQ_TABLE_SIZE 26
+/* My kingdom for a regular expression! */
+static ssize_t store_UV_mV_table(struct cpufreq_policy *policy,
+					const char *buf, size_t count) {
+	unsigned int freq, volt;
+	int adjust, ret, idx, len, thislen;
+	char /*dir[2],*/ freq_unit[4], volt_unit[3];
+	unsigned int table[FREQ_TABLE_SIZE];
+
+	/* "[+-]num" adjustments */
+	ret = sscanf(buf, "- %i", &adjust);
+	if (ret == 1) adjust = -adjust;
+	else ret = sscanf(buf, "+ %i", &adjust);
+	if (ret == 1) {
+		if (acpuclk_update_all_vdd(adjust * 1000) == 1)
+			return count;
+		else
+			return -EINVAL;
+	}
+
+	/* "num: vdd" adjustments */
+	//ret = sscanf(buf, "%u%4s %u%2s", &freq, &freq_unit[0], &volt, &volt_unit[0]);
+	/*
+	ret = sscanf(buf, "%u %3[^:] : %u %2s", &freq, &freq_unit[0], &volt, &volt_unit[0]);
+	if (ret == 1)
+		ret = sscanf(buf, "%u : %u %2s", &freq, &volt, &volt_unit[0]);
+	*/
+	printk(KERN_DEBUG "cpufreq: trying single sets\n");
+	for (idx = 0, len = 0;;) {
+		freq_unit[0] = 0;
+		ret = sscanf(buf + len, "%u %3s : %u %2s %n", &freq, &freq_unit[0], &volt, &volt_unit[0], &thislen);
+		printk(KERN_DEBUG "cpufreq: ret is %i\n", ret);
+		if (ret < 3)
+			ret = sscanf(buf + len, "%u : %u %2s %n", &freq, &volt, &volt_unit[0], &thislen);
+		printk(KERN_DEBUG "cpufreq: ret is %i\n", ret);
+		if (ret < 3) {
+			ret = sscanf(buf + len, "%u : %u %n", &freq, &volt, &volt_unit[0], &thislen);
+			printk(KERN_DEBUG "cpufreq: ret is %i\n", ret);
+			if (ret == 2) ret = 3;
+		}
+		printk(KERN_DEBUG "cpufreq: ret is %i\n", ret);
+		if (ret >= 3) {
+			idx = 1;
+			len += thislen;
+#if 0
+	#define munge(var, uc, lc) \
+		case uc: \
+		case lc: \
+			var *= 1000;
+			switch (freq_unit[0]) {
+			munge(freq, 'G', 'g')
+			munge(freq, 'M', 'm')
+			}
+			switch (volt_unit[0]) {
+			munge(volt, 'M', 'm')
+			}
+	#undef munge
+#endif
+			/* Guess units since we ought to anyway */
+			while (freq < 10000) freq *= 1000;
+			while (volt < 10000) volt *= 1000;
+			printk(KERN_DEBUG "cpufreq: " "Doing single set: %u: %u; ret %i\n", freq, volt, ret);
+			if (acpuclk_update_one_vdd(freq, volt) == 1)
+				return count;
+			else
+				return -EINVAL;
+		} else {
+			if (idx) return -EINVAL;
+			else break;
+		}
+	}
+
+	/* table adjustments */
+	for (idx = 0, len = 0; idx < FREQ_TABLE_SIZE; idx++) {
+		ret = sscanf(buf + len, "%u %n", &table[idx], &thislen);
+		if (ret > 0)
+			len += thislen;
+		else
+			break;
+		/* Allow mV or uV without units */
+		if (table[idx] < 10000)
+			table[idx] *= 1000;
+	}
+	// Make sure we got enough values and reached the end of our input.
+	printk(KERN_DEBUG "cpufreq: " "parse results: idx %i len %i count %i", idx, len, count);
+	if (idx == (FREQ_TABLE_SIZE - 1) && len >= count) {
+		if (acpuclk_update_vdd_table(FREQ_TABLE_SIZE, table))
+			return count;
+		else
+			return -EINVAL;
+	}
+
+	return -EINVAL;
 }
 
 static ssize_t show_UV_mV_table(struct cpufreq_policy *policy, char *buf) {
@@ -725,6 +825,9 @@ cpufreq_freq_attr_rw(scaling_max_freq);
 cpufreq_freq_attr_rw(scaling_governor);
 cpufreq_freq_attr_rw(scaling_setspeed);
 cpufreq_freq_attr_rw(UV_mV_table);
+#define show_vdd_levels show_UV_mV_table
+#define store_vdd_levels store_UV_mV_table
+cpufreq_freq_attr_rw(vdd_levels);
 
 static struct attribute *default_attrs[] = {
 	&cpuinfo_min_freq.attr,
@@ -740,6 +843,7 @@ static struct attribute *default_attrs[] = {
 	&scaling_available_governors.attr,
 	&scaling_setspeed.attr,
 	&UV_mV_table.attr,
+	&vdd_levels.attr,
 	NULL
 };
 

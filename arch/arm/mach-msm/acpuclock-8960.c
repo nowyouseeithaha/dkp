@@ -1857,7 +1857,7 @@ int acpuclk_update_vdd_table(int num, unsigned int table[]) {
 				tgt++;
 			if (!tgt->vdd_core)
 				break;
-			tgt->vdd_core = table[i]; // * 1000;
+			tgt->vdd_core = table[i];
 		}
 	} else {
 		for (i = num; i > 0; i--, tgt++) {
@@ -1865,7 +1865,7 @@ int acpuclk_update_vdd_table(int num, unsigned int table[]) {
 				break;
 			if (tgt->speed.khz == STBY_KHZ)
 				tgt++;
-			tgt->vdd_core = table[i]; // * 1000;
+			tgt->vdd_core = table[i];
 		}
 	}
 	mutex_unlock(&driver_lock);
@@ -1888,6 +1888,18 @@ int acpuclk_update_one_vdd(unsigned int freq, unsigned int uv) {
 	}
 	return ret;
 }
+int acpuclk_update_all_vdd(int adj) {
+	struct acpu_level *tgt = acpu_freq_tbl;
+	for (;;) {
+		if (tgt->speed.khz == STBY_KHZ)
+			tgt++;
+		if (!tgt->vdd_core)
+			break;
+		tgt->vdd_core += adj;
+		tgt++;
+	}
+	return 1;
+}
 ssize_t acpuclk_show_vdd_table(char *buf) {
 	int len;
 	struct acpu_level *tgt = acpu_freq_tbl;
@@ -1895,12 +1907,8 @@ ssize_t acpuclk_show_vdd_table(char *buf) {
 	mutex_lock(&driver_lock);
 	for (len = 0; tgt->l2_level; tgt++) {
 		if (tgt->speed.khz != STBY_KHZ)
-			/* There doesn't seem to be a standard here.
-			 * Kernel Tuner likes "%umhz: %umV" (units optional)
-			 * Some older kernels use "%u: %u"
-			 */
-			len += sprintf(buf + len, "%u: %u\n", //"%umhz: %u\n",
-				tgt->speed.khz /*/ 1000*/, tgt->vdd_core); // / 1000);
+			len += sprintf(buf + len, "%u: %u\n", //"%8u: %8u\n",
+				tgt->speed.khz, tgt->vdd_core);
 	}
 	mutex_unlock(&driver_lock);
 	return len;
@@ -1917,20 +1925,14 @@ static int __init acpuclk_8960_init(struct acpuclk_soc_data *soc_data)
 {
 	struct acpu_level *max_acpu_level = select_freq_plan();
 
-	pr_alert("Doing regulator_init\n");
 	regulator_init(max_acpu_level->vdd_core);
-	pr_alert("Doing bus_init\n");
 	bus_init(max_acpu_level->l2_level->bw_level);
 
-	pr_alert("Doing init_clock_sources\n");
 	init_clock_sources(&scalable[L2], &max_acpu_level->l2_level->speed);
-	pr_alert("Doing per_cpu_inits\n");
 	on_each_cpu(per_cpu_init, max_acpu_level, true);
 
-	pr_alert("Doing cpufreq_table_init\n");
 	cpufreq_table_init();
 
-	pr_alert("Doing acpuclk_register and stuff\n");
 	acpuclk_register(&acpuclk_8960_data);
 	register_hotcpu_notifier(&acpuclock_cpu_notifier);
 
