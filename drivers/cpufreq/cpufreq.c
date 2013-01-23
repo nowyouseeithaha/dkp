@@ -649,63 +649,15 @@ static ssize_t show_scaling_setspeed(struct cpufreq_policy *policy, char *buf)
 	return policy->governor->show_setspeed(policy, buf);
 }
 
-int acpuclk_update_vdd_table(int num, unsigned int table[]);
-int acpuclk_update_one_vdd(unsigned int freq, unsigned int uv);
-int acpuclk_update_all_vdd(int adj);
-ssize_t acpuclk_show_vdd_table(char *buf, char *fmt);
-#define FREQ_TABLE_SIZE 26
-/* My kingdom for a regular expression! */
+/* Per-core UV interface */
+ssize_t acpuclk_store_vdd_table(const char *buf, size_t count);
+ssize_t acpuclk_show_vdd_table(char *buf, char *fmt, int fdiv, int vdiv);
 static ssize_t store_UV_mV_table(struct cpufreq_policy *policy,
 					const char *buf, size_t count) {
-	unsigned int freq, volt;
-	int adjust, ret, idx, len, thislen;
-	char freq_unit[5];
-	unsigned int table[FREQ_TABLE_SIZE];
-
-	/* "[+-]mv" adjustments */
-	ret = sscanf(buf, "- %i", &adjust);
-	if (ret == 1) adjust = -adjust;
-	else ret = sscanf(buf, "+ %i", &adjust);
-	if (ret == 1) {
-		if (acpuclk_update_all_vdd(adjust * 1000) == 1)
-			return count;
-		else
-			return -EINVAL;
-	}
-
-	/* "num(mhz)?: uv" adjustments */
-	ret = sscanf(buf, "%u %4s %u", &freq, &freq_unit[0], &volt);
-	for (idx = 0; freq_unit[idx] != ':' && idx < 5; idx++);
-	if (ret == 3 && freq_unit[idx] == ':') {
-		while (freq < 10000) freq *= 1000;
-		while (volt < 10000) volt *= 1000;
-		if (acpuclk_update_one_vdd(freq, volt) == 1)
-			return count;
-		else
-			return -EINVAL;
-	}
-
-	/* table adjustments */
-	for (idx = 0, len = 0; idx < FREQ_TABLE_SIZE; idx++) {
-		ret = sscanf(buf + len, "%u %n", &table[idx], &thislen);
-		if (ret > 0)
-			len += thislen;
-		else
-			break;
-		while (table[idx] < 10000) table[idx] *= 1000;
-	}
-	if (idx == FREQ_TABLE_SIZE && len >= count) {
-		if (acpuclk_update_vdd_table(FREQ_TABLE_SIZE, table))
-			return count;
-		else
-			return -EINVAL;
-	}
-
-	return -EINVAL;
+	return acpuclk_store_vdd_table(buf, count);
 }
-
 static ssize_t show_UV_mV_table(struct cpufreq_policy *policy, char *buf) {
-	return acpuclk_show_vdd_table(buf, "%u: %u\n");
+	return acpuclk_show_vdd_table(buf, "%umhz: %u mV\n", 1000, 1000);
 }
 
 /**
@@ -739,27 +691,6 @@ cpufreq_freq_attr_rw(scaling_max_freq);
 cpufreq_freq_attr_rw(scaling_governor);
 cpufreq_freq_attr_rw(scaling_setspeed);
 cpufreq_freq_attr_rw(UV_mV_table);
-
-/* vdd_table/vdd_levels */
-static ssize_t show_vdd_levels(struct kobject *kobj,
-		struct attribute *attr, char *buf) {
-	return acpuclk_show_vdd_table(buf, "%8u: %8u\n");
-}
-static ssize_t store_vdd_levels(struct kobject *kobj, struct attribute *attr,
-		const char *buf, size_t count) {
-	/* Yup.  This is happening. */
-	return store_UV_mV_table(NULL, buf, count);
-}
-static struct global_attr vdd_levels_attr = __ATTR(vdd_levels, 0644,
-		show_vdd_levels, store_vdd_levels);
-static struct attribute *vdd_attributes[] = {
-	&vdd_levels_attr.attr,
-	NULL
-};
-static struct attribute_group vdd_attr_group = {
-	.attrs = vdd_attributes,
-	.name = "vdd_table",
-};
 
 static struct attribute *default_attrs[] = {
 	&cpuinfo_min_freq.attr,
@@ -2359,7 +2290,7 @@ EXPORT_SYMBOL_GPL(cpufreq_unregister_driver);
 
 static int __init cpufreq_core_init(void)
 {
-	int cpu, ret;
+	int cpu;
 
 	for_each_possible_cpu(cpu) {
 		per_cpu(cpufreq_policy_cpu, cpu) = -1;
@@ -2373,9 +2304,6 @@ static int __init cpufreq_core_init(void)
 	freq_limit_start_flag = 0;
 #endif
 	register_syscore_ops(&cpufreq_syscore_ops);
-
-	/* Add vdd_table/vdd_levels to sysfs */
-	ret = sysfs_create_group(cpufreq_global_kobject, &vdd_attr_group);
 
 	return 0;
 }
