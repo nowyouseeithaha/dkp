@@ -1627,6 +1627,9 @@ static void cpufreq_table_init(void)
 
 	for_each_possible_cpu(cpu) {
 		int i, freq_cnt = 0;
+		unsigned int max_freq = 0;
+		struct cpufreq_policy *pol;
+
 		/* Construct the freq_table tables from acpu_freq_tbl. */
 		for (i = 0; acpu_freq_tbl[i].speed.khz != 0
 				&& freq_cnt < ARRAY_SIZE(*freq_table); i++) {
@@ -1635,6 +1638,8 @@ static void cpufreq_table_init(void)
 				freq_table[cpu][freq_cnt].frequency
 					= acpu_freq_tbl[i].speed.khz;
 				freq_cnt++;
+				if (acpu_freq_tbl[i].speed.khz > max_freq)
+					max_freq = acpu_freq_tbl[i].speed.khz;
 			}
 		}
 		/* freq_table not big enough to store all usable freqs. */
@@ -1650,6 +1655,13 @@ static void cpufreq_table_init(void)
 
 		/* Register table with CPUFreq. */
 		cpufreq_frequency_table_get_attr(freq_table[cpu], cpu);
+
+		/* Update maximum frequency, notify cpufreq core */
+		pol = cpufreq_cpu_get(cpu);
+                if (pol != NULL) {
+			pol->cpuinfo.max_freq = max_freq;
+			cpufreq_update_policy(cpu);
+                }
 	}
 }
 #else
@@ -1707,7 +1719,6 @@ static struct notifier_block __cpuinitdata acpuclock_cpu_notifier = {
 	.notifier_call = acpuclock_cpu_callback,
 };
 
-/*
 static const int krait_needs_vmin(void)
 {
 	switch (read_cpuid_id()) {
@@ -1726,7 +1737,6 @@ static void kraitv2_apply_vmin(struct acpu_level *tbl)
 		if (tbl->vdd_core < 1150000)
 			tbl->vdd_core = 1150000;
 }
-*/
 
 #ifdef CONFIG_SEC_L1_DCACHE_PANIC_CHK
 uint32_t global_sec_pvs_value;
@@ -2049,10 +2059,23 @@ static ssize_t show_enable_oc(struct kobject *kobj,
 	}
 	return -EINVAL;
 }
+static ssize_t store_force_vmin(struct kobject *kobj, struct attribute *attr,
+                const char *buf, size_t count) {
+	if (krait_needs_vmin())
+		kraitv2_apply_vmin(acpu_freq_tbl);
+	return count;
+}
+static ssize_t show_force_vmin(struct kobject *kobj,
+                struct attribute *attr, char *buf) {
+	return -EINVAL;
+}
 static struct global_attr enable_oc_attr = __ATTR(enable_oc, 0644,
                 show_enable_oc, store_enable_oc);
+static struct global_attr force_vmin_attr = __ATTR(force_vmin, 0644,
+                show_force_vmin, store_force_vmin);
 static struct attribute *oc_attributes[] = {
         &enable_oc_attr.attr,
+        &force_vmin_attr.attr,
         NULL
 };
 static struct attribute_group oc_attr_group = {

@@ -93,8 +93,9 @@ static void check_temp(struct work_struct *work)
 		} else if (temp < allowed_max_low) {
 #ifdef CONFIG_SEC_DVFS
 			if (cpufreq_get_dvfs_state() != 1) {
-				if (cpu_policy->max < BOOT_FREQ_LIMIT) {
-					max_freq = BOOT_FREQ_LIMIT;
+				if (cpu_policy->max
+					< cpu_policy->cpuinfo.max_freq) {
+					max_freq = cpu_policy->cpuinfo.max_freq;
 					update_policy = 1;
 				}
 			} else
@@ -130,8 +131,10 @@ static void disable_msm_thermal(void)
 	for_each_possible_cpu(cpu) {
 		cpu_policy = cpufreq_cpu_get(cpu);
 		if (cpu_policy) {
-			if (cpu_policy->max < BOOT_FREQ_LIMIT)
-				update_cpu_max_freq(cpu_policy, cpu, BOOT_FREQ_LIMIT);
+			if (cpu_policy->max < cpu_policy->cpuinfo.max_freq)
+				update_cpu_max_freq(cpu_policy, cpu,
+						    cpu_policy->
+						    cpuinfo.max_freq);
 			cpufreq_cpu_put(cpu_policy);
 		}
 	}
