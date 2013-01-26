@@ -99,7 +99,7 @@ static int pmic8xxx_pwrkey_suspend(struct device *dev)
 
 	if (device_may_wakeup(dev))
 		enable_irq_wake(pwrkey->key_press_irq);
-	
+
 #ifdef TOUCH_INTERACTION
 	current_pressed = 0;
 	cpufreq_set_interactivity(0, INTERACT_ID_OTHER);
