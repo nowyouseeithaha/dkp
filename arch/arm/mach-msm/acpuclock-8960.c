@@ -1462,9 +1462,6 @@ static int acpuclk_8960_set_rate(int cpu, unsigned long rate,
 	unsigned long flags;
 	int rc = 0;
 
-	printk(KERN_DEBUG "%s: setting cpu %i rate to %lu\n",
-		__func__, cpu, rate);
-
 	if (cpu > num_possible_cpus()) {
 		rc = -EINVAL;
 		goto out;
@@ -1952,29 +1949,23 @@ static int acpuclk_update_vdd_table(int num, unsigned int table[]) {
 static int acpuclk_update_one_vdd(unsigned int freq, unsigned int uv) {
 	int ret = -EINVAL;
 	struct acpu_level *tgt = acpu_freq_tbl;
-	for (;;) {
+	for (; tgt->l2_level; tgt++) {
 		if (tgt->speed.khz == STBY_KHZ)
-			tgt++;
-		if (!tgt->vdd_core)
-			break;
+			continue;
 		if (tgt->speed.khz == freq) {
 			tgt->vdd_core = uv;
 			ret = 1;
 			break;
 		}
-		tgt++;
 	}
 	return ret;
 }
 static int acpuclk_update_all_vdd(int adj) {
 	struct acpu_level *tgt = acpu_freq_tbl;
-	for (;;) {
+	for (; tgt->l2_level; tgt++) {
 		if (tgt->speed.khz == STBY_KHZ)
-			tgt++;
-		if (!tgt->vdd_core)
-			break;
+			continue;
 		tgt->vdd_core += adj;
-		tgt++;
 	}
 	return 1;
 }
@@ -2037,7 +2028,7 @@ ssize_t acpuclk_show_vdd_table(char *buf, char *fmt, int fdiv, int vdiv) {
 
 	mutex_lock(&driver_lock);
 	for (len = 0; tgt->l2_level; tgt++) {
-		if (tgt->speed.khz != STBY_KHZ && tgt->use_for_scaling)
+		if (tgt->speed.khz != STBY_KHZ)
 			len += sprintf(buf + len, fmt,
 				tgt->speed.khz / fdiv, tgt->vdd_core / vdiv);
 	}
@@ -2087,21 +2078,7 @@ static ssize_t store_enable_oc(struct kobject *kobj, struct attribute *attr,
 		return -EINVAL;
 	if (val & ~1)
 		return -EINVAL;
-#if 0
-	if (!acpu_freq_tbl) {
-		printk(KERN_DEBUG "acpuclk: won't enable OC until init completes!\n");
-		return -EINVAL;
-	}
-	for_each_online_cpu(cpu) {
-		if (!cpufreq_cpu_get(cpu)) {
-			printk(KERN_DEBUG "acpuclk: won't enable OC without policies set up!\n");
-			return -EINVAL;
-		}
-	}
-#endif
-
 	acpuclk_set_oc_freq_scaling(val);
-
 	return count;
 }
 static ssize_t show_enable_oc(struct kobject *kobj,
@@ -2154,8 +2131,10 @@ static ssize_t show_available_freqs(struct cpufreq_policy *policy, char *buf) {
 	ssize_t count = 0;
 
 	if (!tgt) return -EINVAL;
-	for (; tgt->l2_level; tgt++)
+	for (; tgt->l2_level; tgt++) {
+		if (tgt->speed.khz == STBY_KHZ) continue;
 		count += sprintf(buf + count, "%d ", tgt->speed.khz);
+	}
 	count += sprintf(buf + count, "\n");
 	return count;
 }
@@ -2163,8 +2142,6 @@ static ssize_t show_available_freqs(struct cpufreq_policy *policy, char *buf) {
 static int __init acpuclk_8960_init(struct acpuclk_soc_data *soc_data)
 {
 	struct acpu_level *max_acpu_level = select_freq_plan();
-
-	printk(KERN_DEBUG "%s go!\n", __func__);
 
 	regulator_init(max_acpu_level->vdd_core);
 	bus_init(max_acpu_level->l2_level->bw_level);
