@@ -456,10 +456,10 @@ static ssize_t store_scaling_min_freq
 }
 
 static struct work_struct enable_oc_work;
-void acpuclk_set_oc_freq_scaling(unsigned int val);
+void acpuclk_enable_oc_freqs();
 
 static void do_enable_oc(struct work_struct *work) {
-	acpuclk_set_oc_freq_scaling(1);
+	acpuclk_enable_oc_freqs();
 }
 static ssize_t store_scaling_max_freq
 	(struct cpufreq_policy *policy, const char *buf, size_t count)
@@ -473,7 +473,6 @@ static ssize_t store_scaling_max_freq
 
 	if (value > BOOT_FREQ_LIMIT)
 		schedule_work(&enable_oc_work);
-		//acpuclk_set_oc_freq_scaling(1);
 
 	if (policy->cpu == BOOT_CPU) {
 		if (value >= MAX_FREQ_LIMIT)

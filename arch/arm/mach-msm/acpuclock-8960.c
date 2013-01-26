@@ -10,18 +10,10 @@
  * GNU General Public License for more details.
  */
 
-/* TODO increase non-fast voltages to match fast */
 #define ALLOW_OC_STEPS
-#define ALLOW_OC_BUS
 #define FREQ_TABLE_SIZE 33
-
-#define DKP_KOBJ
-
-#ifdef ALLOW_OC_BUS
 #define MAX_BUS_LVL 7
-#else
-#define MAX_BUS_LVL 6
-#endif
+//#define ENABLE_VMIN
 
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
@@ -111,6 +103,7 @@ enum vregs {
 	NUM_VREG
 };
 
+/* max_vdd gets written to for slow/nominal */
 struct vreg {
 	const char name[15];
 	/*const*/ unsigned int max_vdd;
@@ -396,9 +389,7 @@ static struct msm_bus_paths bw_level_tbl[] = {
 	[4] = BW_MBPS(3200), /* At least 400 MHz on bus. */
 	[5] = BW_MBPS(3600), /* At least 450 MHz on bus. */
 	[6] = BW_MBPS(3936), /* At least 492 MHz on bus. */
-#ifdef ALLOW_OC_BUS
 	[7] = BW_MBPS(4264), /* At least 533 MHz on bus. */
-#endif
 };
 
 static struct msm_bus_scale_pdata bus_client_pdata = {
@@ -793,13 +784,6 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv2_slow[] = {
 	{ 0, {  1728000, HFPLL, 1, 0, 0x40 }, L2(19), 1275000 },
 	{ 0, {  1782000, HFPLL, 1, 0, 0x42 }, L2(19), 1275000 },
 	{ 0, {  1836000, HFPLL, 1, 0, 0x44 }, L2(19), 1287500 },
-	/*
-	{ 0, {  1890000, HFPLL, 1, 0, 0x46 }, L2(19), 1287500 },
-	{ 0, {  1944000, HFPLL, 1, 0, 0x48 }, L2(19), 1300000 },
-	{ 0, {  1998000, HFPLL, 1, 0, 0x4A }, L2(19), 1300000 },
-	{ 0, {  2052000, HFPLL, 1, 0, 0x4C }, L2(19), 1300000 },
-	{ 0, {  2106000, HFPLL, 1, 0, 0x4E }, L2(19), 1300000 },
-	*/
 	{ 0, {  1890000, HFPLL, 1, 0, 0x46 }, L2(19), 1300000 },
 	{ 0, {  1944000, HFPLL, 1, 0, 0x48 }, L2(19), 1325000 },
 	{ 0, {  1998000, HFPLL, 1, 0, 0x4A }, L2(19), 1350000 },
@@ -840,13 +824,6 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv2_nom[] = {
 	{ 0, {  1728000, HFPLL, 1, 0, 0x40 }, L2(19), 1225000 },
 	{ 0, {  1782000, HFPLL, 1, 0, 0x42 }, L2(19), 1225000 },
 	{ 0, {  1836000, HFPLL, 1, 0, 0x44 }, L2(19), 1237500 },
-	/*
-	{ 0, {  1890000, HFPLL, 1, 0, 0x46 }, L2(19), 1237500 },
-	{ 0, {  1944000, HFPLL, 1, 0, 0x48 }, L2(19), 1250000 },
-	{ 0, {  1998000, HFPLL, 1, 0, 0x4A }, L2(19), 1250000 },
-	{ 0, {  2052000, HFPLL, 1, 0, 0x4C }, L2(19), 1275000 },
-	{ 0, {  2106000, HFPLL, 1, 0, 0x4E }, L2(19), 1275000 },
-	*/
 	{ 0, {  1890000, HFPLL, 1, 0, 0x46 }, L2(19), 1250000 },
 	{ 0, {  1944000, HFPLL, 1, 0, 0x48 }, L2(19), 1275000 },
 	{ 0, {  1998000, HFPLL, 1, 0, 0x4A }, L2(19), 1300000 },
@@ -887,18 +864,11 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv2_fast[] = {
 	{ 0, {  1728000, HFPLL, 1, 0, 0x40 }, L2(19), 1175000 },
 	{ 0, {  1782000, HFPLL, 1, 0, 0x42 }, L2(19), 1175000 },
 	{ 0, {  1836000, HFPLL, 1, 0, 0x44 }, L2(19), 1187500 },
-	/*
-	{ 0, {  1890000, HFPLL, 1, 0, 0x46 }, L2(19), 1187500 },
-	{ 0, {  1944000, HFPLL, 1, 0, 0x48 }, L2(19), 1200000 },
-	{ 0, {  1998000, HFPLL, 1, 0, 0x4A }, L2(19), 1200000 },
-	{ 0, {  2052000, HFPLL, 1, 0, 0x4C }, L2(19), 1212500 },
-	{ 0, {  2106000, HFPLL, 1, 0, 0x4E }, L2(19), 1212500 },
-	*/
 	{ 0, {  1890000, HFPLL, 1, 0, 0x46 }, L2(19), 1200000 },
 	{ 0, {  1944000, HFPLL, 1, 0, 0x48 }, L2(19), 1225000 },
 	{ 0, {  1998000, HFPLL, 1, 0, 0x4A }, L2(19), 1250000 },
-	{ 0, {  2052000, HFPLL, 1, 0, 0x4C }, L2(19), 1300000 }, // schwas 1275
-	{ 0, {  2106000, HFPLL, 1, 0, 0x4E }, L2(19), 1300000 }, // schwas 1300
+	{ 0, {  2052000, HFPLL, 1, 0, 0x4C }, L2(19), 1275000 },
+	{ 0, {  2106000, HFPLL, 1, 0, 0x4E }, L2(19), 1300000 },
 #endif
 	{ 0, { 0 } }
 };
@@ -934,13 +904,6 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv2_f3[] = {
 	{ 0, {  1728000, HFPLL, 1, 0, 0x40 }, L2(19), 1150000 },
 	{ 0, {  1782000, HFPLL, 1, 0, 0x42 }, L2(19), 1150000 },
 	{ 0, {  1836000, HFPLL, 1, 0, 0x44 }, L2(19), 1162500 },
-	/*
-	{ 0, {  1890000, HFPLL, 1, 0, 0x46 }, L2(19), 1162500 },
-	{ 0, {  1944000, HFPLL, 1, 0, 0x48 }, L2(19), 1175000 },
-	{ 0, {  1998000, HFPLL, 1, 0, 0x4A }, L2(19), 1175000 },
-	{ 0, {  2052000, HFPLL, 1, 0, 0x4C }, L2(19), 1187500 },
-	{ 0, {  2106000, HFPLL, 1, 0, 0x4E }, L2(19), 1187500 },
-	*/
 	{ 0, {  1890000, HFPLL, 1, 0, 0x46 }, L2(19), 1175000 },
 	{ 0, {  1944000, HFPLL, 1, 0, 0x48 }, L2(19), 1200000 },
 	{ 0, {  1998000, HFPLL, 1, 0, 0x4A }, L2(19), 1225000 },
@@ -1750,6 +1713,7 @@ static struct notifier_block __cpuinitdata acpuclock_cpu_notifier = {
 	.notifier_call = acpuclock_cpu_callback,
 };
 
+#ifdef ENABLE_VMIN
 static const int krait_needs_vmin(void)
 {
 	switch (read_cpuid_id()) {
@@ -1768,6 +1732,7 @@ static void kraitv2_apply_vmin(struct acpu_level *tbl)
 		if (tbl->vdd_core < 1150000)
 			tbl->vdd_core = 1150000;
 }
+#endif
 
 #ifdef CONFIG_SEC_L1_DCACHE_PANIC_CHK
 uint32_t global_sec_pvs_value;
@@ -1906,14 +1871,14 @@ static struct acpu_level * __init select_freq_plan(void)
 	} else {
 		BUG();
 	}
-	/*
+#ifdef ENABLE_VMIN
 	if (krait_needs_vmin())
 		kraitv2_apply_vmin(acpu_freq_tbl);
-	*/
+#endif
 
 	/* Find the max supported scaling frequency. */
 	for (l = acpu_freq_tbl; l->speed.khz != 0; l++)
-		if (l->use_for_scaling && l->speed.khz <= BOOT_FREQ_LIMIT)
+		if (l->use_for_scaling)
 			max_acpu_level = l;
 	BUG_ON(!max_acpu_level);
 	pr_info("Max ACPU freq: %u KHz\n", max_acpu_level->speed.khz);
@@ -2026,13 +1991,11 @@ ssize_t acpuclk_show_vdd_table(char *buf, char *fmt, int fdiv, int vdiv) {
 	int len;
 	struct acpu_level *tgt = acpu_freq_tbl;
 
-	mutex_lock(&driver_lock);
 	for (len = 0; tgt->l2_level; tgt++) {
 		if (tgt->speed.khz != STBY_KHZ)
 			len += sprintf(buf + len, fmt,
 				tgt->speed.khz / fdiv, tgt->vdd_core / vdiv);
 	}
-	mutex_unlock(&driver_lock);
 	return len;
 }
 
@@ -2057,64 +2020,16 @@ static struct attribute_group vdd_attr_group = {
 };
 
 /* Enable OC interface */
-void acpuclk_set_oc_freq_scaling(unsigned int val) {
+void acpuclk_enable_oc_freqs() {
 	struct acpu_level *tgt = acpu_freq_tbl;
 
 	for (; tgt->l2_level; tgt++) {
 		if (tgt->speed.khz > BOOT_FREQ_LIMIT)
-			tgt->use_for_scaling = val;
+			tgt->use_for_scaling = 1;
 	}
 
 	cpufreq_table_init();
 }
-
-#ifdef DKP_KOBJ
-static ssize_t store_enable_oc(struct kobject *kobj, struct attribute *attr,
-                const char *buf, size_t count) {
-	unsigned int val;
-	//int cpu;
-
-	if (sscanf(buf, "%u", &val) != 1)
-		return -EINVAL;
-	if (val & ~1)
-		return -EINVAL;
-	acpuclk_set_oc_freq_scaling(val);
-	return count;
-}
-static ssize_t show_enable_oc(struct kobject *kobj,
-                struct attribute *attr, char *buf) {
-	struct acpu_level *tgt = acpu_freq_tbl;
-	for (; tgt->l2_level; tgt++) {
-		if (tgt->speed.khz > BOOT_FREQ_LIMIT)
-			return sprintf(buf, "%u\n",
-				tgt->use_for_scaling);
-	}
-	return -EINVAL;
-}
-static ssize_t store_force_vmin(struct kobject *kobj, struct attribute *attr,
-                const char *buf, size_t count) {
-	if (krait_needs_vmin())
-		kraitv2_apply_vmin(acpu_freq_tbl);
-	return count;
-}
-static ssize_t show_force_vmin(struct kobject *kobj,
-                struct attribute *attr, char *buf) {
-	return -EINVAL;
-}
-static struct global_attr enable_oc_attr = __ATTR(enable_oc, 0644,
-                show_enable_oc, store_enable_oc);
-static struct global_attr force_vmin_attr = __ATTR(force_vmin, 0644,
-                show_force_vmin, store_force_vmin);
-static struct attribute *dkp_attributes[] = {
-        &enable_oc_attr.attr,
-        &force_vmin_attr.attr,
-        NULL
-};
-static struct attribute_group dkp_attr_group = {
-        .attrs = dkp_attributes,
-        .name = "dkp",
-};
-#endif /* def DKP_KOBJ */
 
 static struct acpuclk_data acpuclk_8960_data = {
 	.set_rate = acpuclk_8960_set_rate,
@@ -2124,7 +2039,7 @@ static struct acpuclk_data acpuclk_8960_data = {
 };
 
 /* Override the available freqs list.  This is a dirty hack, but should fool
- * most userspace apps into enabling OC by setting max high enough.
+ * userspace into picking OC frequencies.
  */
 static ssize_t show_available_freqs(struct cpufreq_policy *policy, char *buf) {
 	struct acpu_level *tgt = acpu_freq_tbl;
@@ -2154,10 +2069,6 @@ static int __init acpuclk_8960_init(struct acpuclk_soc_data *soc_data)
 	acpuclk_register(&acpuclk_8960_data);
 	register_hotcpu_notifier(&acpuclock_cpu_notifier);
 
-#ifdef DKP_KOBJ
-	if (sysfs_create_group(cpufreq_global_kobject, &dkp_attr_group))
-		pr_err("Unable to create dkp group!\n");
-#endif
 	if (sysfs_create_group(cpufreq_global_kobject, &vdd_attr_group))
 		pr_err("Unable to create vdd_table group!\n");
 
