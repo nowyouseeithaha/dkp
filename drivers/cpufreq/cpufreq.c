@@ -455,6 +455,12 @@ static ssize_t store_scaling_min_freq
 	return count;
 }
 
+static struct work_struct enable_oc_work;
+void acpuclk_enable_oc_freqs();
+
+static void do_enable_oc(struct work_struct *work) {
+	acpuclk_enable_oc_freqs();
+}
 static ssize_t store_scaling_max_freq
 	(struct cpufreq_policy *policy, const char *buf, size_t count)
 {
@@ -464,6 +470,9 @@ static ssize_t store_scaling_max_freq
 	ret = sscanf(buf, "%u", &value);
 	if (ret != 1)
 		return -EINVAL;
+
+	if (value > BOOT_FREQ_LIMIT)
+		schedule_work(&enable_oc_work);
 
 	if (policy->cpu == BOOT_CPU) {
 		if (value >= MAX_FREQ_LIMIT)
@@ -649,6 +658,17 @@ static ssize_t show_scaling_setspeed(struct cpufreq_policy *policy, char *buf)
 	return policy->governor->show_setspeed(policy, buf);
 }
 
+/* Per-core UV interface */
+ssize_t acpuclk_store_vdd_table(const char *buf, size_t count);
+ssize_t acpuclk_show_vdd_table(char *buf, char *fmt, int fdiv, int vdiv);
+static ssize_t store_UV_mV_table(struct cpufreq_policy *policy,
+					const char *buf, size_t count) {
+	return acpuclk_store_vdd_table(buf, count);
+}
+static ssize_t show_UV_mV_table(struct cpufreq_policy *policy, char *buf) {
+	return acpuclk_show_vdd_table(buf, "%umhz: %u mV\n", 1000, 1000);
+}
+
 /**
  * show_scaling_driver - show the current cpufreq HW/BIOS limitation
  */
@@ -679,6 +699,7 @@ cpufreq_freq_attr_rw(scaling_min_freq);
 cpufreq_freq_attr_rw(scaling_max_freq);
 cpufreq_freq_attr_rw(scaling_governor);
 cpufreq_freq_attr_rw(scaling_setspeed);
+cpufreq_freq_attr_rw(UV_mV_table);
 
 static struct attribute *default_attrs[] = {
 	&cpuinfo_min_freq.attr,
@@ -693,6 +714,7 @@ static struct attribute *default_attrs[] = {
 	&scaling_driver.attr,
 	&scaling_available_governors.attr,
 	&scaling_setspeed.attr,
+	&UV_mV_table.attr,
 	NULL
 };
 
@@ -2223,6 +2245,7 @@ int cpufreq_register_driver(struct cpufreq_driver *driver_data)
 	cpufreq_queue_priv.wq = create_workqueue("cpufreq_queue");
 	INIT_WORK(&cpufreq_queue_priv.work, cpufreq_set_limit_work);
 #endif
+	INIT_WORK(&enable_oc_work, do_enable_oc);
 
 	register_hotcpu_notifier(&cpufreq_cpu_notifier);
 	pr_debug("driver %s up and running\n", driver_data->name);
