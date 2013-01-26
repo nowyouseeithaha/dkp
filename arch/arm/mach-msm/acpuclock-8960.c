@@ -15,6 +15,8 @@
 #define ALLOW_OC_BUS
 #define FREQ_TABLE_SIZE 33
 
+#define DKP_KOBJ
+
 #ifdef ALLOW_OC_BUS
 #define MAX_BUS_LVL 7
 #else
@@ -2016,11 +2018,8 @@ ssize_t acpuclk_store_vdd_table(const char *buf, size_t count) {
         /* table adjustments */
         for (idx = 0, len = 0; idx < freq_table_length && len < count - 1; idx++) {
                 ret = sscanf(buf + len, " %u%n", &table[idx], &thislen);
-
 		if (!ret) return -EINVAL;
-
 		len += thislen;
-
                 while (table[idx] < 10000) table[idx] *= 1000;
         }
         if (idx == freq_table_length && len == count - 1) {
@@ -2067,16 +2066,28 @@ static struct attribute_group vdd_attr_group = {
 };
 
 /* Enable OC interface */
+void acpuclk_set_oc_freq_scaling(unsigned int val) {
+	struct acpu_level *tgt = acpu_freq_tbl;
+
+	for (; tgt->l2_level; tgt++) {
+		if (tgt->speed.khz > BOOT_FREQ_LIMIT)
+			tgt->use_for_scaling = val;
+	}
+
+	cpufreq_table_init();
+}
+
+#ifdef DKP_KOBJ
 static ssize_t store_enable_oc(struct kobject *kobj, struct attribute *attr,
                 const char *buf, size_t count) {
-	struct acpu_level *tgt = acpu_freq_tbl;
 	unsigned int val;
-	int cpu;
+	//int cpu;
 
 	if (sscanf(buf, "%u", &val) != 1)
 		return -EINVAL;
 	if (val & ~1)
 		return -EINVAL;
+#if 0
 	if (!acpu_freq_tbl) {
 		printk(KERN_DEBUG "acpuclk: won't enable OC until init completes!\n");
 		return -EINVAL;
@@ -2087,12 +2098,9 @@ static ssize_t store_enable_oc(struct kobject *kobj, struct attribute *attr,
 			return -EINVAL;
 		}
 	}
-	for (; tgt->l2_level; tgt++) {
-		if (tgt->speed.khz > BOOT_FREQ_LIMIT)
-			tgt->use_for_scaling = val;
-	}
+#endif
 
-	cpufreq_table_init();
+	acpuclk_set_oc_freq_scaling(val);
 
 	return count;
 }
@@ -2129,6 +2137,7 @@ static struct attribute_group dkp_attr_group = {
         .attrs = dkp_attributes,
         .name = "dkp",
 };
+#endif /* def DKP_KOBJ */
 
 static struct acpuclk_data acpuclk_8960_data = {
 	.set_rate = acpuclk_8960_set_rate,
@@ -2136,6 +2145,20 @@ static struct acpuclk_data acpuclk_8960_data = {
 	.power_collapse_khz = STBY_KHZ,
 	.wait_for_irq_khz = STBY_KHZ,
 };
+
+/* Override the available freqs list.  This is a dirty hack, but should fool
+ * most userspace apps into enabling OC by setting max high enough.
+ */
+static ssize_t show_available_freqs(struct cpufreq_policy *policy, char *buf) {
+	struct acpu_level *tgt = acpu_freq_tbl;
+	ssize_t count = 0;
+
+	if (!tgt) return -EINVAL;
+	for (; tgt->l2_level; tgt++)
+		count += sprintf(buf + count, "%d ", tgt->speed.khz);
+	count += sprintf(buf + count, "\n");
+	return count;
+}
 
 static int __init acpuclk_8960_init(struct acpuclk_soc_data *soc_data)
 {
@@ -2154,10 +2177,14 @@ static int __init acpuclk_8960_init(struct acpuclk_soc_data *soc_data)
 	acpuclk_register(&acpuclk_8960_data);
 	register_hotcpu_notifier(&acpuclock_cpu_notifier);
 
+#ifdef DKP_KOBJ
 	if (sysfs_create_group(cpufreq_global_kobject, &dkp_attr_group))
 		pr_err("Unable to create dkp group!\n");
+#endif
 	if (sysfs_create_group(cpufreq_global_kobject, &vdd_attr_group))
 		pr_err("Unable to create vdd_table group!\n");
+
+	cpufreq_freq_attr_scaling_available_freqs.show = show_available_freqs;
 
 	return 0;
 }

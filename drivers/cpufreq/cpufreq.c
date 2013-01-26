@@ -455,6 +455,8 @@ static ssize_t store_scaling_min_freq
 	return count;
 }
 
+void acpuclk_set_oc_freq_scaling(unsigned int val);
+
 static ssize_t store_scaling_max_freq
 	(struct cpufreq_policy *policy, const char *buf, size_t count)
 {
@@ -464,6 +466,9 @@ static ssize_t store_scaling_max_freq
 	ret = sscanf(buf, "%u", &value);
 	if (ret != 1)
 		return -EINVAL;
+
+	if (value > BOOT_FREQ_LIMIT)
+		acpuclk_set_oc_freq_scaling(1);
 
 	if (policy->cpu == BOOT_CPU) {
 		if (value >= MAX_FREQ_LIMIT)
