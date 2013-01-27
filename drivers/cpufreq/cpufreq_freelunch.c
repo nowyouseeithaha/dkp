@@ -111,19 +111,19 @@ static struct dbs_tuners {
 	unsigned int interaction_return_cycles;
 } dbs_tuners_ins = {
 	/* Pretty reasonable defaults */
-	.sampling_rate = 25000,
+	.sampling_rate = 35000, /* 2 vsyncs */
 	.ignore_nice = 0,
-	.hotplug_up_cycles = 1, //3,
+	.hotplug_up_cycles = 1,
 	.hotplug_down_cycles = 1,
 	.hotplug_up_load = 3,
-	.hotplug_up_usage = 40, /* 60? */
+	.hotplug_up_usage = 40,
 	.hotplug_down_usage = 15,
-	.overestimate_khz = 35000, /* 75k or so is needed for Netflix */
-	.interaction_hack = 8, /* 5 gets awesome battery life */
+	.overestimate_khz = 75000,
+	.interaction_hack = 8,
 	.interaction_sampling_rate = 10000,
-	.interaction_overestimate_khz = 125000,
+	.interaction_overestimate_khz = 175000,
 	.interaction_return_usage = 15,
-	.interaction_return_cycles = 4, /* = 50ms = 3 frames */
+	.interaction_return_cycles = 4, /* 3 vsyncs */
 };
 // }}}
 // {{{2 support function crap
