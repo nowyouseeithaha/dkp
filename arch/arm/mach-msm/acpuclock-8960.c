@@ -1785,16 +1785,12 @@ static struct acpu_level * __init select_freq_plan(void)
 					pvs_leakage);
 				v1 = acpu_freq_tbl_8960_kraitv1_slow;
 				v2 = acpu_freq_tbl_8960_kraitv2_slow;
-				scalable_8960[CPU0].vreg[VREG_CORE].max_vdd = 1400000;
-				scalable_8960[CPU1].vreg[VREG_CORE].max_vdd = 1400000;
 				break;
 			case 0x1:
 				pr_alert("ACPU PVS: Nominal(L%d)\n",
 					pvs_leakage);
 				v1 = acpu_freq_tbl_8960_kraitv1_nom_fast;
 				v2 = acpu_freq_tbl_8960_kraitv2_nom;
-				scalable_8960[CPU0].vreg[VREG_CORE].max_vdd = 1350000;
-				scalable_8960[CPU1].vreg[VREG_CORE].max_vdd = 1350000;
 				break;
 			case 0x3:
 				switch (fmax) {
@@ -2020,8 +2016,11 @@ static struct attribute_group vdd_attr_group = {
 };
 
 /* Enable OC interface */
-void acpuclk_enable_oc_freqs() {
+void acpuclk_enable_oc_freqs(void) {
 	struct acpu_level *tgt = acpu_freq_tbl;
+
+	scalable_8960[CPU0].vreg[VREG_CORE].max_vdd = 1400000;
+	scalable_8960[CPU1].vreg[VREG_CORE].max_vdd = 1400000;
 
 	for (; tgt->l2_level; tgt++) {
 		if (tgt->speed.khz > BOOT_FREQ_LIMIT)

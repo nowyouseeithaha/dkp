@@ -98,6 +98,11 @@ void acpuclk_register(struct acpuclk_data *data);
  */
 int acpuclk_init(struct acpuclk_soc_data *);
 
+/**
+ * acpuclk_enable_oc_freqs() - unlock all frequency steppings
+ */
+void acpuclk_enable_oc_freqs(void);
+
 /* SoC-specific acpuclock initialization functions. */
 extern struct acpuclk_soc_data acpuclk_7x27_soc_data;
 extern struct acpuclk_soc_data acpuclk_7x27a_soc_data;

@@ -456,7 +456,7 @@ static ssize_t store_scaling_min_freq
 }
 
 static struct work_struct enable_oc_work;
-void acpuclk_enable_oc_freqs();
+void acpuclk_enable_oc_freqs(void);
 
 static void do_enable_oc(struct work_struct *work) {
 	acpuclk_enable_oc_freqs();
