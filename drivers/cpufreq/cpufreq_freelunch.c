@@ -504,10 +504,6 @@ static void do_dbs_timer(struct work_struct *work)
 	else
 		delay = usecs_to_jiffies(dbs_tuners_ins.sampling_rate);
 
-	printk(KERN_DEBUG "freelunch spam: %u %u %u %u %i\n",
-		this_dbs_info->is_interactive,
-		IGF(PRESSED), IGF(RUNNING), IGF(ENABLED), delay);
-
 	delay -= jiffies % delay;
 
 	mutex_lock(&this_dbs_info->timer_mutex);
@@ -636,17 +632,14 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			int idx;
 			mutex_lock(&this_dbs_info->timer_mutex);
 
-			/* Set up interaction vars */
 			this_dbs_info->prev_idx = 0;
 			for (idx = 0; idx < PREV_SAMPLES_MAX; idx++)
 				this_dbs_info->prev_loads[idx] = 0;
 			ISF(ENABLED);
 
-			/* Reset timers */
-			this_dbs_info->prev_cpu_idle =
-				get_cpu_idle_time(policy->cpu, &this_dbs_info->prev_cpu_wall);
-
 			if (cancel_delayed_work_sync(&this_dbs_info->work)) {
+				this_dbs_info->prev_cpu_idle =
+					get_cpu_idle_time(policy->cpu, &this_dbs_info->prev_cpu_wall);
 				schedule_delayed_work_on(this_dbs_info->cpu, &this_dbs_info->work,
 					usecs_to_jiffies(dbs_tuners_ins.interaction_sampling_rate));
 			}
@@ -659,10 +652,8 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 	case CPUFREQ_GOV_NOINTERACT:
 		mutex_lock(&this_dbs_info->timer_mutex);
 		if (IGF(PRESSED)) {
-			/* Allow dropping out of interaction */
 			IUF(PRESSED);
 			this_dbs_info->defer_cycles = 0;
-			/* Collect stats */
 			this_dbs_info->deferred_return = 0;
 		}
 		mutex_unlock(&this_dbs_info->timer_mutex);
