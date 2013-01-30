@@ -111,14 +111,13 @@ static struct dbs_tuners {
 
 	unsigned int interaction_samples;
 	unsigned int interaction_hispeed;
-	unsigned int interaction_max_down_coeff;
-	unsigned int interaction_max_up_coeff;
+	unsigned int max_coeff;
 } dbs_tuners_ins = {
 	/* Pretty reasonable defaults */
 	.sampling_rate = 35000, /* 2 vsyncs */
 	.ignore_nice = 0,
-	.hotplug_up_cycles = 1,
-	.hotplug_down_cycles = 1,
+	.hotplug_up_cycles = 3,
+	.hotplug_down_cycles = 3,
 	.hotplug_up_load = 3,
 	.hotplug_up_usage = 40,
 	.hotplug_down_usage = 15,
@@ -128,9 +127,8 @@ static struct dbs_tuners {
 	.interaction_return_usage = 15,
 	.interaction_return_cycles = 4, /* 3 vsyncs */
 	.interaction_samples = 3, /* 2 vsyncs */
-	.interaction_hispeed = 918000,
-	.interaction_max_down_coeff = 33,
-	.interaction_max_up_coeff = 33,
+	.interaction_hispeed = 1188000,
+	.max_coeff = 50,
 };
 // }}}
 // {{{2 support function crap
@@ -244,8 +242,7 @@ i_am_lazy(interaction_return_usage, 0, 100)
 i_am_lazy(interaction_return_cycles, 0, 100)
 i_am_lazy(interaction_samples, 1, PREV_SAMPLES_MAX)
 i_am_lazy(interaction_hispeed, 0, 4000000)
-i_am_lazy(interaction_max_down_coeff, 1, 1000)
-i_am_lazy(interaction_max_up_coeff, 1, 1000)
+i_am_lazy(max_coeff, 1, 1000)
 
 static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b,
 				   const char *buf, size_t count)
@@ -312,8 +309,7 @@ static struct attribute *dbs_attributes[] = {
 	&interaction_return_cycles.attr,
 	&interaction_samples.attr,
 	&interaction_hispeed.attr,
-	&interaction_max_down_coeff.attr,
-	&interaction_max_up_coeff.attr,
+	&max_coeff.attr,
 	NULL
 };
 
@@ -339,6 +335,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	unsigned int idle_time, wall_time;
 
 	struct cpufreq_policy *policy;
+
+	unsigned int min_freq, overestimate, hispeed;
 
 	/* Calculate load for this processor only.  The assumption is that we're
 	 * running on an aSMP processor where each core has its own instance.
@@ -388,14 +386,15 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	 * return where appropriate.
 	 */
 	if (num_online_cpus() == 1) {
-		/*
+#if 1
 		if (nr_running() >= dbs_tuners_ins.hotplug_up_load) {
 			if ((this_dbs_info->hotplug_cycle++ >= dbs_tuners_ins.hotplug_up_cycles) &&
 				load > policy->max * dbs_tuners_ins.hotplug_up_usage / 100) {
-		*/
+#else
 		if (nr_running() >= dbs_tuners_ins.hotplug_up_load &&
 			load > policy->max * dbs_tuners_ins.hotplug_up_usage / 100) {
 			if (this_dbs_info->hotplug_cycle++ >= dbs_tuners_ins.hotplug_up_cycles) {
+#endif
 				schedule_work_on(0, &cpu_up_work);
 				this_dbs_info->hotplug_cycle = 0;
 			}
@@ -409,23 +408,27 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		} else this_dbs_info->hotplug_cycle = 0;
 	}
 
-	/* Interaction hack go! */
+	/* Handle deferred return to noninteractive. */
+	if (!IGF(PRESSED)) {
+		this_dbs_info->deferred_return++;
+		if (load < policy->max * dbs_tuners_ins.interaction_return_usage / 100) {
+			if (this_dbs_info->defer_cycles++ >= dbs_tuners_ins.interaction_return_cycles) {
+				IUF(ENABLED);
+				printk(KERN_DEBUG "freelunch: deferred noninteractive %u cycles.\n",
+					this_dbs_info->deferred_return);
+			}
+		} else this_dbs_info->defer_cycles = 0;
+	}
+
 	if (IGF(ENABLED)) {
-		unsigned int min_freq;
-		int idx;
-
-		/* Handle deferred return to noninteractive. */
-		if (!IGF(PRESSED)) {
-			this_dbs_info->deferred_return++;
-            if (load < policy->max * dbs_tuners_ins.interaction_return_usage / 100) {
-                if (this_dbs_info->defer_cycles++ >= dbs_tuners_ins.interaction_return_cycles) {
-                    IUF(ENABLED);
-					printk(KERN_DEBUG "freelunch: deferred noninteractive %u cycles.\n",
-						this_dbs_info->deferred_return);
-                }
-            } else this_dbs_info->defer_cycles = 0;
-        }
-
+		overestimate = dbs_tuners_ins.interaction_overestimate_khz;
+		hispeed = dbs_tuners_ins.interaction_hispeed;
+	} else {
+		overestimate = dbs_tuners_ins.overestimate_khz;
+		hispeed = load;
+	}
+	
+#if 0
 		/* Update max_freq */
 		if (load > policy->cur - dbs_tuners_ins.interaction_overestimate_khz) {
 			/* Using load instead of ->cur responds poorly to low freqs and high iokhz */
@@ -448,7 +451,21 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 				this_dbs_info->max_freq - (dbs_tuners_ins.interaction_overestimate_khz *
 				dbs_tuners_ins.interaction_max_down_coeff / 100));
 		}
+#endif
+	/* Update max_freq */
+	if (load > policy->cur - overestimate) {
+		this_dbs_info->max_freq = min(policy->max,
+			max(load + overestimate, this_dbs_info->max_freq));
+	} else {
+		unsigned int fml =
+			this_dbs_info->max_freq - overestimate * dbs_tuners_ins.max_coeff / 1000;
+		if (this_dbs_info->max_freq < hispeed && load < policy->min)
+			this_dbs_info->max_freq = min(hispeed, this_dbs_info->max_freq + fml);
+		else
+			this_dbs_info->max_freq = max(hispeed, this_dbs_info->max_freq - fml);
+	}
 
+#if 0
 		/* Calculate min_freq */
 		min_freq = 0;
 		this_dbs_info->prev_loads[this_dbs_info->prev_idx % dbs_tuners_ins.interaction_samples] = load;
@@ -456,7 +473,22 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		for (idx = min((int)dbs_tuners_ins.interaction_samples, this_dbs_info->prev_idx); idx >= 0; idx--)
 			min_freq += this_dbs_info->prev_loads[idx];
 		min_freq /= dbs_tuners_ins.interaction_samples;
+#endif
+	/* Calculate min_freq */
+	if (IGF(ENABLED)) {
+		int idx;
+		min_freq = 0;
+		this_dbs_info->prev_loads[this_dbs_info->prev_idx % dbs_tuners_ins.interaction_samples] = load;
+		this_dbs_info->prev_idx++;
+		for (idx = min((int)dbs_tuners_ins.interaction_samples, this_dbs_info->prev_idx);
+			idx >= 0; idx--)
+			min_freq += this_dbs_info->prev_loads[idx];
+		min_freq /= dbs_tuners_ins.interaction_samples;
+	} else {
+		min_freq = load;
+	}
 
+#if 0
 		/* Set frequency */
 		if (load < min_freq)
 			this_dbs_info->requested_freq = min_freq + dbs_tuners_ins.interaction_overestimate_khz;
@@ -469,7 +501,20 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 				(dist * this_dbs_info->max_freq +
 				(1000 - dist) * min_freq) / 1000;
 		}
+#endif
+	/* Set frequency */
+	if (load <= min_freq)
+		this_dbs_info->requested_freq = min_freq + overestimate;
+	else if (policy->cur <= min_freq)
+		this_dbs_info->requested_freq = this_dbs_info->max_freq;
+	else {
+		unsigned int dist = 1000 * (load - min_freq) / (policy->cur - min_freq);
+		this_dbs_info->requested_freq =
+			(dist * this_dbs_info->max_freq +
+			(1000 - dist) * min_freq) / 1000;
+	}
 
+#if 0
 		/* Round up to the next stepping. */
 		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
 			CPUFREQ_RELATION_L);
@@ -487,7 +532,9 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
 			CPUFREQ_RELATION_H);
 	}
-
+#endif
+	__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
+		CPUFREQ_RELATION_H);
 }
 // }}}
 // {{{2 cpufreq crap
@@ -628,9 +675,11 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		break;
 
 	case CPUFREQ_GOV_INTERACT:
+		mutex_lock(&this_dbs_info->timer_mutex);
+		this_dbs_info->max_freq = max(this_dbs_info->max_freq,
+			dbs_tuners_ins.interaction_hispeed);
 		if (!IGF(ENABLED)) {
 			int idx;
-			mutex_lock(&this_dbs_info->timer_mutex);
 
 			this_dbs_info->prev_idx = 0;
 			for (idx = 0; idx < PREV_SAMPLES_MAX; idx++)
@@ -643,9 +692,8 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 				schedule_delayed_work_on(this_dbs_info->cpu, &this_dbs_info->work,
 					usecs_to_jiffies(dbs_tuners_ins.interaction_sampling_rate));
 			}
-
-			mutex_unlock(&this_dbs_info->timer_mutex);
 		}
+		mutex_unlock(&this_dbs_info->timer_mutex);
 
 		break;
 
