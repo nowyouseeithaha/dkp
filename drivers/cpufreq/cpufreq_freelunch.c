@@ -40,7 +40,6 @@ enum interaction_flags {
 	IFLAG_PRESSED = 1,
 	IFLAG_RUNNING = 2,
 	IFLAG_ENABLED = 1 | 2,
-	IFLAG_QUICK = 4
 };
 #define IGF(x) (this_dbs_info->is_interactive & IFLAG_##x)
 #define ISF(x) this_dbs_info->is_interactive |= IFLAG_##x
@@ -421,25 +420,11 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
             if (load < policy->max * dbs_tuners_ins.interaction_return_usage / 100) {
                 if (this_dbs_info->defer_cycles++ >= dbs_tuners_ins.interaction_return_cycles) {
                     IUF(ENABLED);
-                    IUF(QUICK);
 					printk(KERN_DEBUG "freelunch: deferred noninteractive %u cycles.\n",
 						this_dbs_info->deferred_return);
                 }
             } else this_dbs_info->defer_cycles = 0;
         }
-		/* If we're at minimum frequency and staying interactive, reset
-		 * back into QUICK to sample faster.  We still won't change freq
-		 * faster than sampling_rate_min.
-		 */
-		if (load < policy->min - dbs_tuners_ins.interaction_overestimate_khz &&
-			policy->cur == policy->min) {
-			ISF(QUICK);
-			this_dbs_info->max_freq = dbs_tuners_ins.interaction_hispeed;
-			this_dbs_info->prev_idx = 0;
-			return;
-		}
-
-		IUF(QUICK);
 
 		/* Update max_freq */
 		if (load > policy->cur - dbs_tuners_ins.interaction_overestimate_khz) {
@@ -514,16 +499,14 @@ static void do_dbs_timer(struct work_struct *work)
 
 	/* We want all CPUs to do sampling nearly on same jiffy */
 	int delay;
-	if (IGF(QUICK))
-		delay = usecs_to_jiffies(dbs_tuners_ins.interaction_sampling_rate / 2);
-	else if (IGF(ENABLED))
+	if (IGF(ENABLED))
 		delay = usecs_to_jiffies(dbs_tuners_ins.interaction_sampling_rate);
 	else
 		delay = usecs_to_jiffies(dbs_tuners_ins.sampling_rate);
 
-	printk(KERN_DEBUG "freelunch spam: %u %u %u %u %u %i\n",
+	printk(KERN_DEBUG "freelunch spam: %u %u %u %u %i\n",
 		this_dbs_info->is_interactive,
-		IGF(PRESSED), IGF(RUNNING), IGF(ENABLED), IGF(QUICK), delay);
+		IGF(PRESSED), IGF(RUNNING), IGF(ENABLED), delay);
 
 	delay -= jiffies % delay;
 
@@ -658,16 +641,14 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			for (idx = 0; idx < PREV_SAMPLES_MAX; idx++)
 				this_dbs_info->prev_loads[idx] = 0;
 			ISF(ENABLED);
-			ISF(QUICK);
 
 			/* Reset timers */
 			this_dbs_info->prev_cpu_idle =
 				get_cpu_idle_time(policy->cpu, &this_dbs_info->prev_cpu_wall);
 
-			/* Sample 5ms of load and start ramping as needed. */
 			if (cancel_delayed_work_sync(&this_dbs_info->work)) {
 				schedule_delayed_work_on(this_dbs_info->cpu, &this_dbs_info->work,
-					usecs_to_jiffies(dbs_tuners_ins.interaction_sampling_rate / 2));
+					usecs_to_jiffies(dbs_tuners_ins.interaction_sampling_rate));
 			}
 
 			mutex_unlock(&this_dbs_info->timer_mutex);
