@@ -434,9 +434,9 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 					IUF(QUICK);
 				}
 			} else this_dbs_info->defer_cycles = 0;
-		} else {
+		} //else {
 			/* If we're at minimum frequency and staying interactive, reset
-			 * back into INIT to sample faster.  We still won't change freq
+			 * back into QUICK to sample faster.  We still won't change freq
 			 * faster than sampling_rate_min.
 			 */
 			if (load < policy->min - dbs_tuners_ins.interaction_overestimate_khz &&
@@ -445,7 +445,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 				ISF(QUICK);
 				return;
 			}
-		}
+		//}
 
 		/* Print deferral stats */
 		//if (this_dbs_info->is_interactive == INT_DOWN)
