@@ -408,131 +408,68 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		} else this_dbs_info->hotplug_cycle = 0;
 	}
 
-	/* Handle deferred return to noninteractive. */
-	if (!IGF(PRESSED)) {
-		this_dbs_info->deferred_return++;
-		if (load < policy->max * dbs_tuners_ins.interaction_return_usage / 100) {
-			if (this_dbs_info->defer_cycles++ >= dbs_tuners_ins.interaction_return_cycles) {
-				IUF(ENABLED);
-				printk(KERN_DEBUG "freelunch: deferred noninteractive %u cycles.\n",
-					this_dbs_info->deferred_return);
-			}
-		} else this_dbs_info->defer_cycles = 0;
-	}
-
 	if (IGF(ENABLED)) {
+		if (!IGF(PRESSED)) {
+			this_dbs_info->deferred_return++;
+			if (load < policy->max * dbs_tuners_ins.interaction_return_usage / 100) {
+				if (this_dbs_info->defer_cycles++ >= dbs_tuners_ins.interaction_return_cycles) {
+					IUF(ENABLED);
+					printk(KERN_DEBUG "freelunch: deferred noninteractive %u cycles.\n",
+						this_dbs_info->deferred_return);
+				}
+			} else this_dbs_info->defer_cycles = 0;
+		}
 		overestimate = dbs_tuners_ins.interaction_overestimate_khz;
 		hispeed = dbs_tuners_ins.interaction_hispeed;
 	} else {
 		overestimate = dbs_tuners_ins.overestimate_khz;
-		hispeed = load;
+		hispeed = 0;
 	}
-	
-#if 0
-		/* Update max_freq */
-		if (load > policy->cur - dbs_tuners_ins.interaction_overestimate_khz) {
-			/* Using load instead of ->cur responds poorly to low freqs and high iokhz */
-			this_dbs_info->max_freq = min(policy->max,
-				max(this_dbs_info->max_freq,
-				load * (1000 * policy->cur /
-				(policy->cur - dbs_tuners_ins.interaction_overestimate_khz)) / 1000));
-		} else if (load < policy->min) {
-			unsigned int fml = 
-				this_dbs_info->max_freq - dbs_tuners_ins.interaction_overestimate_khz *
-				dbs_tuners_ins.interaction_max_up_coeff / 100;
-			if (this_dbs_info->max_freq > dbs_tuners_ins.interaction_hispeed)
-					this_dbs_info->max_freq = max(dbs_tuners_ins.interaction_hispeed,
-						this_dbs_info->max_freq - fml);
-				else
-					this_dbs_info->max_freq = min(dbs_tuners_ins.interaction_hispeed,
-						this_dbs_info->max_freq + fml);
-		} else {
-			this_dbs_info->max_freq = max(load + dbs_tuners_ins.interaction_overestimate_khz,
-				this_dbs_info->max_freq - (dbs_tuners_ins.interaction_overestimate_khz *
-				dbs_tuners_ins.interaction_max_down_coeff / 100));
-		}
-#endif
-	/* Update max_freq */
+
+	/* Update max_freq & min_freq:
+	 * Both will always be >= load
+	 */
 	if (load > policy->cur - overestimate) {
-		this_dbs_info->max_freq = min(policy->max,
-			max(load + overestimate, this_dbs_info->max_freq));
+		this_dbs_info->max_freq = max(load, this_dbs_info->max_freq);
 	} else {
-		unsigned int fml =
-			this_dbs_info->max_freq - overestimate * dbs_tuners_ins.max_coeff / 1000;
+		unsigned int fml = overestimate * dbs_tuners_ins.max_coeff / 100;
 		if (this_dbs_info->max_freq < hispeed && load < policy->min)
 			this_dbs_info->max_freq = min(hispeed, this_dbs_info->max_freq + fml);
 		else
-			this_dbs_info->max_freq = max(hispeed, this_dbs_info->max_freq - fml);
+			this_dbs_info->max_freq -= fml;
+		if (this_dbs_info->max_freq < load)
+			this_dbs_info->max_freq = load;
 	}
 
-#if 0
-		/* Calculate min_freq */
-		min_freq = 0;
-		this_dbs_info->prev_loads[this_dbs_info->prev_idx % dbs_tuners_ins.interaction_samples] = load;
-		this_dbs_info->prev_idx++;
-		for (idx = min((int)dbs_tuners_ins.interaction_samples, this_dbs_info->prev_idx); idx >= 0; idx--)
-			min_freq += this_dbs_info->prev_loads[idx];
-		min_freq /= dbs_tuners_ins.interaction_samples;
-#endif
-	/* Calculate min_freq */
 	if (IGF(ENABLED)) {
-		int idx;
+		int idx, cnt;
 		min_freq = 0;
 		this_dbs_info->prev_loads[this_dbs_info->prev_idx % dbs_tuners_ins.interaction_samples] = load;
 		this_dbs_info->prev_idx++;
-		for (idx = min((int)dbs_tuners_ins.interaction_samples, this_dbs_info->prev_idx);
-			idx >= 0; idx--)
-			min_freq += this_dbs_info->prev_loads[idx];
-		min_freq /= dbs_tuners_ins.interaction_samples;
-	} else {
-		min_freq = load;
-	}
-
-#if 0
-		/* Set frequency */
-		if (load < min_freq)
-			this_dbs_info->requested_freq = min_freq + dbs_tuners_ins.interaction_overestimate_khz;
-		else if (policy->cur <= min_freq) /* something is wrong, or we're at max freq */
-			this_dbs_info->requested_freq = this_dbs_info->max_freq;
-		else {
-			unsigned int dist;
-			dist = 1000 * (load - min_freq) / (policy->cur - min_freq);
-			this_dbs_info->requested_freq =
-				(dist * this_dbs_info->max_freq +
-				(1000 - dist) * min_freq) / 1000;
+		for (idx = min((int)dbs_tuners_ins.interaction_samples, this_dbs_info->prev_idx),
+			cnt = 0; idx >= 0; idx--) {
+			if (this_dbs_info->prev_loads[idx] >= load) {
+				min_freq += this_dbs_info->prev_loads[idx];
+				cnt++;
+			}
 		}
-#endif
+		if (!cnt) {
+			printk(KERN_DEBUG "freelunch: something is seriously wrong\n");
+			return;
+		}
+		min_freq /= cnt;
+	} else
+		min_freq = load;
+
 	/* Set frequency */
-	if (load <= min_freq)
+	if (load > policy->cur - overestimate) {
+		unsigned int dist = 1000 * (load + overestimate - policy->cur) / overestimate;
+		this_dbs_info->requested_freq = (dist * this_dbs_info->max_freq +
+			(1000 - dist) * min_freq) / 1000 + overestimate;
+	} else {
 		this_dbs_info->requested_freq = min_freq + overestimate;
-	else if (policy->cur <= min_freq)
-		this_dbs_info->requested_freq = this_dbs_info->max_freq;
-	else {
-		unsigned int dist = 1000 * (load - min_freq) / (policy->cur - min_freq);
-		this_dbs_info->requested_freq =
-			(dist * this_dbs_info->max_freq +
-			(1000 - dist) * min_freq) / 1000;
 	}
 
-#if 0
-		/* Round up to the next stepping. */
-		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
-			CPUFREQ_RELATION_L);
-	} else {
-		/* Bump frequency, allowing mid-stepping values. */
-		this_dbs_info->requested_freq += (policy->cur + dbs_tuners_ins.overestimate_khz)
-			/ wall_time * (wall_time - idle_time);
-		this_dbs_info->requested_freq -= policy->cur;
-		/* Bounds-check the new frequency */
-		if (this_dbs_info->requested_freq < policy->min)
-			this_dbs_info->requested_freq = policy->min;
-		else if (this_dbs_info->requested_freq > policy->max)
-			this_dbs_info->requested_freq = policy->max;
-		/* Round down to the next stepping */
-		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
-			CPUFREQ_RELATION_H);
-	}
-#endif
 	__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
 		CPUFREQ_RELATION_H);
 }
