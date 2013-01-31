@@ -436,7 +436,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (this_dbs_info->max_freq < hispeed && load < policy->min)
 			this_dbs_info->max_freq = min(hispeed, this_dbs_info->max_freq + fml);
 		else
-			this_dbs_info->max_freq -= fml;
+			this_dbs_info->max_freq -= min(fml, this_dbs_info->max_freq);
 		if (this_dbs_info->max_freq < load)
 			this_dbs_info->max_freq = load;
 	}
