@@ -336,7 +336,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	struct cpufreq_policy *policy;
 
-	unsigned int min_freq, overestimate, hispeed;
+	unsigned int min_freq, overestimate, hispeed, fml;
 
 	/* Calculate load for this processor only.  The assumption is that we're
 	 * running on an aSMP processor where each core has its own instance.
@@ -428,11 +428,13 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	/* Update max_freq & min_freq:
 	 * Both will always be >= load
+	 * Certain (unlikely) conditions may cause max_freq to be lower than
+	 * min_freq, but I don't care.
 	 */
 	if (load > policy->cur - overestimate) {
 		this_dbs_info->max_freq = max(load, this_dbs_info->max_freq);
 	} else {
-		unsigned int fml = overestimate * dbs_tuners_ins.max_coeff / 100;
+		fml = overestimate * dbs_tuners_ins.max_coeff / 100;
 		if (this_dbs_info->max_freq < hispeed && load < policy->min)
 			this_dbs_info->max_freq = min(hispeed, this_dbs_info->max_freq + fml);
 		else
@@ -462,12 +464,32 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		min_freq = load;
 
 	/* Set frequency */
+#if 0
 	if (load > policy->cur - overestimate) {
 		unsigned int dist = 1000 * (load + overestimate - policy->cur) / overestimate;
 		this_dbs_info->requested_freq = (dist * this_dbs_info->max_freq +
 			(1000 - dist) * min_freq) / 1000 + overestimate;
 	} else {
 		this_dbs_info->requested_freq = min_freq + overestimate;
+	}
+#endif
+	if (load > policy->cur - overestimate) {
+		fml = 1000 * (load + overestimate - policy->cur) / overestimate;
+		this_dbs_info->requested_freq += (fml * this_dbs_info->max_freq +
+			(1000 - fml) * min_freq) / 1000 + overestimate;
+	} else {
+		this_dbs_info->requested_freq += min_freq + overestimate;
+	}
+	// Bound request just outside available range
+	fml = (policy->min < overestimate ? 0 : policy->min - overestimate);
+	if (this_dbs_info->requested_freq > policy->cur) {
+		this_dbs_info->requested_freq -= policy->cur;
+		if (this_dbs_info->requested_freq < fml)
+			this_dbs_info->requested_freq = fml;
+		else if (this_dbs_info->requested_freq > policy->max + overestimate)
+			this_dbs_info->requested_freq = policy->max + overestimate;
+	} else {
+		this_dbs_info->requested_freq = fml;
 	}
 
 	__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
