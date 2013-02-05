@@ -5,7 +5,7 @@
  *            (C)  2003 Venkatesh Pallipadi <venkatesh.pallipadi@intel.com>.
  *                      Jun Nakajima <jun.nakajima@intel.com>
  *            (C)  2009 Alexander Clouter <alex@digriz.org.uk>
- *            (C)  2012 Ryan Pennucci <decimalman@gmail.com>
+ *            (C)  2013 Ryan Pennucci <decimalman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -45,11 +45,6 @@ enum interaction_flags {
 #define ISF(x) this_dbs_info->is_interactive |= IFLAG_##x
 #define IUF(x) this_dbs_info->is_interactive &= ~IFLAG_##x
 
-/* I was going to write the code to dynamically allocate this, but your mom
- * called me back to bed.
- */
-#define PREV_SAMPLES_MAX 5
-
 // {{{1 tuner crap
 static void do_dbs_timer(struct work_struct *work);
 
@@ -76,8 +71,6 @@ struct cpu_dbs_info_s {
 	unsigned int defer_cycles;
 	unsigned int deferred_return;
 	unsigned int max_freq;
-	unsigned int prev_loads[PREV_SAMPLES_MAX];
-	int prev_idx;
 };
 static DEFINE_PER_CPU(struct cpu_dbs_info_s, cs_cpu_dbs_info);
 
@@ -109,9 +102,8 @@ static struct dbs_tuners {
 	unsigned int interaction_return_usage;
 	unsigned int interaction_return_cycles;
 
-	unsigned int interaction_samples;
 	unsigned int interaction_hispeed;
-	unsigned int max_coeff;
+	unsigned int hispeed_decrease;
 } dbs_tuners_ins = {
 	/* Pretty reasonable defaults */
 	.sampling_rate = 35000, /* 2 vsyncs */
@@ -124,11 +116,10 @@ static struct dbs_tuners {
 	.overestimate_khz = 75000,
 	.interaction_sampling_rate = 10000,
 	.interaction_overestimate_khz = 175000,
-	.interaction_return_usage = 15,
+	.interaction_return_usage = 5, /* crazy low, but XDA sucks otherwise */
 	.interaction_return_cycles = 4, /* 3 vsyncs */
-	.interaction_samples = 3, /* 2 vsyncs */
 	.interaction_hispeed = 1188000,
-	.max_coeff = 50,
+	.hispeed_decrease = 25000,
 };
 // }}}
 // {{{2 support function crap
@@ -235,14 +226,13 @@ i_am_lazy(hotplug_down_cycles, 0, 10)
 i_am_lazy(hotplug_up_load, 0, 10)
 i_am_lazy(hotplug_up_usage, 0, 100)
 i_am_lazy(hotplug_down_usage, 0, 100)
-i_am_lazy(overestimate_khz, 0, 350000)
+i_am_lazy(overestimate_khz, 0, 500000)
 i_am_lazy(interaction_sampling_rate, 10000, 1000000)
-i_am_lazy(interaction_overestimate_khz, 0, 350000)
+i_am_lazy(interaction_overestimate_khz, 0, 500000)
 i_am_lazy(interaction_return_usage, 0, 100)
 i_am_lazy(interaction_return_cycles, 0, 100)
-i_am_lazy(interaction_samples, 1, PREV_SAMPLES_MAX)
 i_am_lazy(interaction_hispeed, 0, 4000000)
-i_am_lazy(max_coeff, 1, 1000)
+i_am_lazy(hispeed_decrease, 0, 4000000)
 
 static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b,
 				   const char *buf, size_t count)
@@ -307,9 +297,8 @@ static struct attribute *dbs_attributes[] = {
 	&interaction_overestimate_khz.attr,
 	&interaction_return_usage.attr,
 	&interaction_return_cycles.attr,
-	&interaction_samples.attr,
 	&interaction_hispeed.attr,
-	&max_coeff.attr,
+	&hispeed_decrease.attr,
 	NULL
 };
 
@@ -336,7 +325,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	struct cpufreq_policy *policy;
 
-	unsigned int min_freq, overestimate, hispeed, fml;
+	unsigned int overestimate, fml;
 
 	/* Calculate load for this processor only.  The assumption is that we're
 	 * running on an aSMP processor where each core has its own instance.
@@ -370,7 +359,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	}
 
 	/* Apparently, this happens. */
-	if (idle_time > wall_time) return;
+	if (unlikely(idle_time > wall_time)) return;
 
 	/* Not needed, but why not? */
 	if (wall_time > 1000) {
@@ -381,10 +370,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* Assume we've only run for a small fraction of a second. */
 	load = policy->cur / wall_time * (wall_time - idle_time);
 
-	/* Hotplug?
-	 * This used to happen after freq setting, but it's handy to be able to
-	 * return where appropriate.
-	 */
+	/* Hotplug? */
 	if (num_online_cpus() == 1) {
 #if 1
 		if (nr_running() >= dbs_tuners_ins.hotplug_up_load) {
@@ -408,6 +394,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		} else this_dbs_info->hotplug_cycle = 0;
 	}
 
+	/* Return from interaction? */
 	if (IGF(ENABLED)) {
 		if (!IGF(PRESSED)) {
 			this_dbs_info->deferred_return++;
@@ -420,67 +407,29 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			} else this_dbs_info->defer_cycles = 0;
 		}
 		overestimate = dbs_tuners_ins.interaction_overestimate_khz;
-		hispeed = dbs_tuners_ins.interaction_hispeed;
 	} else {
 		overestimate = dbs_tuners_ins.overestimate_khz;
-		hispeed = 0;
 	}
 
-	/* Update max_freq & min_freq:
-	 * Both will always be >= load
-	 * Certain (unlikely) conditions may cause max_freq to be lower than
-	 * min_freq, but I don't care.
-	 */
-	if (load > policy->cur - overestimate) {
-		this_dbs_info->max_freq = max(load, this_dbs_info->max_freq);
+	/* Update max_freq: will always be >= load */
+	if (!dbs_tuners_ins.hispeed_decrease) {
+		this_dbs_info->max_freq = load + overestimate;
 	} else {
-		fml = overestimate * dbs_tuners_ins.max_coeff / 100;
-		if (this_dbs_info->max_freq < hispeed && load < policy->min)
-			this_dbs_info->max_freq = min(hispeed, this_dbs_info->max_freq + fml);
-		else
-			this_dbs_info->max_freq -= min(fml, this_dbs_info->max_freq);
-		if (this_dbs_info->max_freq < load)
-			this_dbs_info->max_freq = load;
+		if (IGF(PRESSED)) {
+			this_dbs_info->max_freq = max(dbs_tuners_ins.interaction_hispeed,
+				this_dbs_info->max_freq - dbs_tuners_ins.hispeed_decrease);
+		} else {
+			this_dbs_info->max_freq -= min(this_dbs_info->max_freq,
+				dbs_tuners_ins.hispeed_decrease);
+		}
+		if (load + overestimate > this_dbs_info->max_freq)
+			this_dbs_info->max_freq = load + overestimate;
 	}
-
-	if (IGF(ENABLED)) {
-		int idx, cnt;
-		min_freq = 0;
-		this_dbs_info->prev_loads[this_dbs_info->prev_idx % dbs_tuners_ins.interaction_samples] = load;
-		this_dbs_info->prev_idx++;
-		for (idx = min((int)dbs_tuners_ins.interaction_samples, this_dbs_info->prev_idx),
-			cnt = 0; idx >= 0; idx--) {
-			if (this_dbs_info->prev_loads[idx] >= load) {
-				min_freq += this_dbs_info->prev_loads[idx];
-				cnt++;
-			}
-		}
-		if (!cnt) {
-			printk(KERN_DEBUG "freelunch: something is seriously wrong\n");
-			return;
-		}
-		min_freq /= cnt;
-	} else
-		min_freq = load;
 
 	/* Set frequency */
-#if 0
-	if (load > policy->cur - overestimate) {
-		unsigned int dist = 1000 * (load + overestimate - policy->cur) / overestimate;
-		this_dbs_info->requested_freq = (dist * this_dbs_info->max_freq +
-			(1000 - dist) * min_freq) / 1000 + overestimate;
-	} else {
-		this_dbs_info->requested_freq = min_freq + overestimate;
-	}
-#endif
-	if (load > policy->cur - overestimate) {
-		fml = 1000 * (load + overestimate - policy->cur) / overestimate;
-		this_dbs_info->requested_freq += (fml * this_dbs_info->max_freq +
-			(1000 - fml) * min_freq) / 1000 + overestimate;
-	} else {
-		this_dbs_info->requested_freq += min_freq + overestimate;
-	}
-	// Bound request just outside available range
+	this_dbs_info->requested_freq += load + overestimate > policy->cur ?
+		this_dbs_info->max_freq : load + overestimate;
+	/* Bound request just outside available range */
 	fml = (policy->min < overestimate ? 0 : policy->min - overestimate);
 	if (this_dbs_info->requested_freq > policy->cur) {
 		this_dbs_info->requested_freq -= policy->cur;
@@ -635,16 +584,9 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 
 	case CPUFREQ_GOV_INTERACT:
 		mutex_lock(&this_dbs_info->timer_mutex);
-		this_dbs_info->max_freq = max(this_dbs_info->max_freq,
-			dbs_tuners_ins.interaction_hispeed);
+		this_dbs_info->max_freq = max(this_dbs_info->max_freq, dbs_tuners_ins.interaction_hispeed);
 		if (!IGF(ENABLED)) {
-			int idx;
-
-			this_dbs_info->prev_idx = 0;
-			for (idx = 0; idx < PREV_SAMPLES_MAX; idx++)
-				this_dbs_info->prev_loads[idx] = 0;
 			ISF(ENABLED);
-
 			if (cancel_delayed_work_sync(&this_dbs_info->work)) {
 				this_dbs_info->prev_cpu_idle =
 					get_cpu_idle_time(policy->cpu, &this_dbs_info->prev_cpu_wall);
