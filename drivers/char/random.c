@@ -1174,15 +1174,15 @@ static inline void swap_byte(u8 *a, u8 *b) {
 	*b = swapByte;
 }
 
-static int init_rand_state() {
+static int init_rand_state(void) {
 	unsigned int i, j, k;
         u8 *S;
-        u8 *seed = kmalloc(256, GFP_KERNEL);
+	/* For some reason, using kmalloc/kfree for seed was causing panics if
+	 * set during boot.
+	 */
+	u8 seed[256];
 
-	if (!seed)
-		return -ENOMEM;
-
-	get_random_bytes_arch(seed, 256);
+	get_random_bytes_arch(&seed, 256);
 
         S = erandom_state.S;
         for (i=0; i<256; i++)
@@ -1192,7 +1192,7 @@ static int init_rand_state() {
         S = erandom_state.S;
 
         for (i=0; i<256; i++) {
-                j = (j + S[i] + *seed++) & 0xff;
+		j = (j + S[i] + seed[i]) & 0xff;
                 swap_byte(&S[i], &S[j]);
         }
 
@@ -1210,8 +1210,6 @@ static int init_rand_state() {
 	/* Save state */
         erandom_state.i = i;
         erandom_state.j = j;
-
-	kfree(seed);
 
 	return 0;
 }
