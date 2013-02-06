@@ -39,6 +39,21 @@
  * DAMAGE.
  */
 
+/* Portions of this code are derived from frandom.c, which is distributed with
+ * the following copyright notice:
+ *
+ * frandom.c:
+ * 	Fast pseudo-random generator
+ *
+ *      (c) Copyright 2003-2011 Eli Billauer
+ *      http://www.billauer.co.il
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ */
+
 /*
  * (now, with legal B.S. out of the way.....)
  *
@@ -255,6 +270,7 @@
 #include <linux/fips.h>
 #include <linux/ptrace.h>
 #include <linux/kmemcheck.h>
+#include <linux/mutex.h>
 
 #ifdef CONFIG_GENERIC_HARDIRQS
 # include <linux/irq.h>
@@ -304,6 +320,20 @@ static int trickle_thresh __read_mostly = INPUT_POOL_WORDS * 28;
  * read, this counter is incremented.
  */
 static int random_depletions = 0;
+
+/*
+ * Map urandom to erandom?
+ */
+static int urandom_is_erandom = 0;
+static int max_is_erandom = 1, min_is_erandom = 0;
+
+static DEFINE_MUTEX(erandom_mutex);
+static char erandom_seeded = 0;
+static struct frandom_state {
+	u8 S[256];
+	u8 i;
+	u8 j;
+} erandom_state;
 
 static DEFINE_PER_CPU(int, trickle_count);
 
@@ -1136,6 +1166,98 @@ void rand_initialize_disk(struct gendisk *disk)
 }
 #endif
 
+static inline void swap_byte(u8 *a, u8 *b) {
+	u8 swapByte;
+
+	swapByte = *a;
+	*a = *b;
+	*b = swapByte;
+}
+
+static int init_rand_state(struct frandom_state *state) {
+	unsigned int i, j, k;
+        u8 *S;
+        u8 *seed = kmalloc(256, GFP_KERNEL);
+
+	if (!seed)
+		return -ENOMEM;
+
+	get_random_bytes(seed, 256);
+
+        S = state->S;
+        for (i=0; i<256; i++)
+                *S++=i;
+
+        j=0;
+        S = state->S;
+
+        for (i=0; i<256; i++) {
+                j = (j + S[i] + *seed++) & 0xff;
+                swap_byte(&S[i], &S[j]);
+        }
+
+        /* It's considered good practice to discard the first 256 bytes
+           generated. So we do it:
+        */
+
+        i=0; j=0;
+        for (k=0; k<256; k++) {
+                i = (i + 1) & 0xff;
+                j = (j + S[i]) & 0xff;
+                swap_byte(&S[i], &S[j]);
+        }
+
+	/* Save state */
+        state->i = i;
+        state->j = j;
+
+	kfree(seed);
+
+	return 0;
+}
+
+static void erandom_get_random_bytes(char *buf, size_t count) {
+        struct frandom_state *state = &erandom_state;
+        int k;
+
+        unsigned int i;
+        unsigned int j;
+        u8 *S;
+
+	if (mutex_lock_interruptible(&erandom_mutex)) {
+                get_random_bytes(buf, count);
+                return;
+        }
+
+	if (!erandom_seeded) {
+                if (!init_rand_state(state)) {
+			printk(KERN_INFO "frandom: Seeded global generator now (used by erandom)\n");
+			erandom_seeded = 1;
+		} else {
+			mutex_unlock(&erandom_mutex);
+			printk(KERN_WARNING "frandom: unable to seed global generator!\n");
+			get_random_bytes(buf, count);
+			return;
+		}
+        }
+
+        i = state->i;
+        j = state->j;
+        S = state->S;
+
+        for (k=0; k<count; k++) {
+                i = (i + 1) & 0xff;
+                j = (j + S[i]) & 0xff;
+                swap_byte(&S[i], &S[j]);
+                *buf++ = S[(S[i] + S[j]) & 0xff];
+        }
+
+        state->i = i;
+        state->j = j;
+
+	mutex_unlock(&erandom_mutex);
+}
+
 static ssize_t
 random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 {
@@ -1195,7 +1317,12 @@ random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 static ssize_t
 urandom_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 {
-	return extract_entropy_user(&nonblocking_pool, buf, nbytes);
+	if (urandom_is_erandom) {
+		erandom_get_random_bytes(buf, nbytes);
+		return nbytes;
+	} else {
+		return extract_entropy_user(&nonblocking_pool, buf, nbytes);
+	}
 }
 
 static unsigned int
@@ -1442,6 +1569,15 @@ ctl_table random_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0444,
 		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "urandom_is_erandom",
+		.data		= &urandom_is_erandom,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &min_is_erandom,
+		.extra2		= &max_is_erandom,
 	},
 	{ }
 };
