@@ -15,6 +15,8 @@
 #define MAX_BUS_LVL 7
 //#define ENABLE_VMIN
 
+static unsigned int final_vmin = 1150000;
+
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
 #include <linux/kernel.h>
@@ -747,10 +749,10 @@ static struct l2_level l2_freq_tbl_8960_kraitv2[] = {
 	[13] = { { 1026000, HFPLL, 1, 0, 0x26 }, 1150000, 1150000, 6 },
 	[14] = { { 1080000, HFPLL, 1, 0, 0x28 }, 1150000, 1150000, 6 },
 	[15] = { { 1134000, HFPLL, 1, 0, 0x2A }, 1150000, 1150000, 6 },
-	[16] = { { 1188000, HFPLL, 1, 0, 0x2C }, 1150000, 1150000, MAX_BUS_LVL },
-	[17] = { { 1242000, HFPLL, 1, 0, 0x2E }, 1150000, 1150000, MAX_BUS_LVL },
-	[18] = { { 1296000, HFPLL, 1, 0, 0x30 }, 1150000, 1150000, MAX_BUS_LVL },
-	[19] = { { 1350000, HFPLL, 1, 0, 0x32 }, 1150000, 1150000, MAX_BUS_LVL },
+	[16] = { { 1188000, HFPLL, 1, 0, 0x2C }, 1150000, 1150000, 6 },
+	[17] = { { 1242000, HFPLL, 1, 0, 0x2E }, 1150000, 1150000, 6 },
+	[18] = { { 1296000, HFPLL, 1, 0, 0x30 }, 1150000, 1150000, 6 },
+	[19] = { { 1350000, HFPLL, 1, 0, 0x32 }, 1150000, 1150000, 6 },
 };
 
 static struct acpu_level acpu_freq_tbl_8960_kraitv2_slow[] = {
@@ -1342,9 +1344,9 @@ static void decrease_vdd(int cpu, unsigned int vdd_core, unsigned int vdd_mem,
 	 * that's being affected. Don't do this in the hotplug remove path,
 	 * where the rail is off and we're executing on the other CPU.
 	 */
-	if (vdd_core < sc->vreg[VREG_CORE].cur_vdd
+	if (max(vdd_core, final_vmin) < sc->vreg[VREG_CORE].cur_vdd
 					&& reason != SETRATE_HOTPLUG) {
-		ret = regulator_set_voltage(sc->vreg[VREG_CORE].reg, vdd_core,
+		ret = regulator_set_voltage(sc->vreg[VREG_CORE].reg, max(vdd_core, final_vmin),
 					    sc->vreg[VREG_CORE].max_vdd);
 		if (ret) {
 			pr_err("%s: vdd_core (cpu%d) decrease failed (%d)\n",
@@ -1932,56 +1934,63 @@ static int acpuclk_update_all_vdd(int adj) {
 }
 /* My kingdom for a regular expression! */
 ssize_t acpuclk_store_vdd_table(const char *buf, size_t count) {
-        unsigned int freq, volt;
-        int adjust, ret, idx, len, thislen;
-        char freq_unit[5];
-        unsigned int table[FREQ_TABLE_SIZE];
+	unsigned int freq, volt;
+	int adjust, ret, idx, len, thislen;
+	char freq_unit[5];
+	unsigned int table[FREQ_TABLE_SIZE];
 
-        /* "[+-]mv" adjustments */
-        ret = sscanf(buf, "- %i", &adjust);
-        if (ret == 1) adjust = -adjust;
-        else ret = sscanf(buf, "+ %i", &adjust);
-        if (ret == 1) {
-                if (acpuclk_update_all_vdd(adjust * 1000) == 1)
-                        return count;
-                else
-                        return -EINVAL;
-        }
+	/* "[+-]mv" adjustments, also understands uv */
+	ret = sscanf(buf, "- %i", &adjust);
+	if (ret == 1) {
+		if (adjust < 1000)
+			adjust *= 1000;
+		adjust = -adjust;
+	} else {
+		ret = sscanf(buf, "+ %i", &adjust);
+		if (ret == 1 && adjust < 1000)
+			adjust *= 1000;
+	}
+	if (ret == 1) {
+		if (acpuclk_update_all_vdd(adjust) == 1)
+			return count;
+		else
+			return -EINVAL;
+	}
 
-        /* "num(mhz)?: uv([um]v)?" adjustments */
-        ret = sscanf(buf, "%u %4s %u", &freq, &freq_unit[0], &volt);
-        if (ret == 3) {
-                for (idx = 0; freq_unit[idx] != ':' && idx < 5; idx++);
-                if (freq_unit[idx] != ':') ret = 0;
-        } else {
+	/* "num(mhz)?: uv([um]v)?" adjustments */
+	ret = sscanf(buf, "%u %4s %u", &freq, &freq_unit[0], &volt);
+	if (ret == 3) {
+		for (idx = 0; idx < 4 && freq_unit[idx] != ':'; idx++);
+		if (freq_unit[idx] != ':') ret = 0;
+	} else {
 		/* Hack for Kernel Tuner's initscripts */
-                ret = sscanf(buf, "%u %u %4s", &freq, &volt, &freq_unit[0]);
-                if (ret != 2) ret = 0;
-        }
-        if (ret) {
-                while (freq < 10000) freq *= 1000;
-                while (volt < 10000) volt *= 1000;
-                if (acpuclk_update_one_vdd(freq, volt) == 1)
-                        return count;
-                else
-                        return -EINVAL;
-        }
+		ret = sscanf(buf, "%u %u %4s", &freq, &volt, &freq_unit[0]);
+		if (ret != 2) ret = 0;
+	}
+	if (ret) {
+		while (freq < 10000) freq *= 1000;
+		while (volt < 10000) volt *= 1000;
+		if (acpuclk_update_one_vdd(freq, volt) == 1)
+			return count;
+		else
+			return -EINVAL;
+	}
 
-        /* table adjustments */
-        for (idx = 0, len = 0; idx < freq_table_length && len < count - 1; idx++) {
-                ret = sscanf(buf + len, " %u%n", &table[idx], &thislen);
+	/* table adjustments */
+	for (idx = 0, len = 0; idx < freq_table_length && len < count - 1; idx++) {
+		ret = sscanf(buf + len, " %u%n", &table[idx], &thislen);
 		if (!ret) return -EINVAL;
 		len += thislen;
-                while (table[idx] < 10000) table[idx] *= 1000;
-        }
-        if (idx == freq_table_length && len == count - 1) {
-                if (acpuclk_update_vdd_table(freq_table_length, table))
-                        return count;
-                else
-                        return -EINVAL;
-        }
+		while (table[idx] < 10000) table[idx] *= 1000;
+	}
+	if (idx == freq_table_length && len == count - 1) {
+		if (acpuclk_update_vdd_table(freq_table_length, table))
+			return count;
+		else
+			return -EINVAL;
+	}
 
-        return -EINVAL;
+	return -EINVAL;
 }
 ssize_t acpuclk_show_vdd_table(char *buf, char *fmt, int fdiv, int vdiv) {
 	int len;
@@ -1997,25 +2006,25 @@ ssize_t acpuclk_show_vdd_table(char *buf, char *fmt, int fdiv, int vdiv) {
 
 /* Global UV interface */
 static ssize_t show_vdd_levels(struct kobject *kobj,
-                struct attribute *attr, char *buf) {
-        return acpuclk_show_vdd_table(buf, "%8u: %8u\n", 1, 1);
+		struct attribute *attr, char *buf) {
+	return acpuclk_show_vdd_table(buf, "%8u: %8u\n", 1, 1);
 }
 static ssize_t store_vdd_levels(struct kobject *kobj, struct attribute *attr,
-                const char *buf, size_t count) {
-        return acpuclk_store_vdd_table(buf, count);
+		const char *buf, size_t count) {
+	return acpuclk_store_vdd_table(buf, count);
 }
 static struct global_attr vdd_levels_attr = __ATTR(vdd_levels, 0644,
-                show_vdd_levels, store_vdd_levels);
+		show_vdd_levels, store_vdd_levels);
 static struct attribute *vdd_attributes[] = {
-        &vdd_levels_attr.attr,
-        NULL
+	&vdd_levels_attr.attr,
+	NULL
 };
 static struct attribute_group vdd_attr_group = {
-        .attrs = vdd_attributes,
-        .name = "vdd_table",
+	.attrs = vdd_attributes,
+	.name = "vdd_table",
 };
 
-/* Enable OC interface */
+/* Enable OC frequencies.  Also bump max voltage & bus speed. */
 void acpuclk_enable_oc_freqs(void) {
 	struct acpu_level *tgt = acpu_freq_tbl;
 
@@ -2026,9 +2035,37 @@ void acpuclk_enable_oc_freqs(void) {
 		if (tgt->speed.khz > BOOT_FREQ_LIMIT)
 			tgt->use_for_scaling = 1;
 	}
+	tgt--;
+	tgt->l2_level->bw_level = MAX_BUS_LVL;
 
 	cpufreq_table_init();
 }
+
+static ssize_t store_vmin(struct kobject *kobj, struct attribute *attr,
+		 const char *buf, size_t count) {
+	unsigned int temp;
+	if (sscanf(buf, "%u", &temp) == 1) {
+		if (temp >= 700 && temp <= 1400) {
+			final_vmin = temp * 1000;
+			return count;
+		}
+	}
+	return -EINVAL;
+}
+static ssize_t show_vmin(struct kobject *kobj,
+		 struct attribute *attr, char *buf) {
+	return sprintf(buf, "%u\n", final_vmin / 1000);
+}
+static struct global_attr vmin_attr = __ATTR(vmin, 0644,
+		 show_vmin, store_vmin);
+static struct attribute *dkp_attributes[] = {
+	 &vmin_attr.attr,
+	 NULL
+};
+static struct attribute_group dkp_attr_group = {
+	 .attrs = dkp_attributes,
+	 .name = "dkp",
+};
 
 static struct acpuclk_data acpuclk_8960_data = {
 	.set_rate = acpuclk_8960_set_rate,
@@ -2068,9 +2105,13 @@ static int __init acpuclk_8960_init(struct acpuclk_soc_data *soc_data)
 	acpuclk_register(&acpuclk_8960_data);
 	register_hotcpu_notifier(&acpuclock_cpu_notifier);
 
+	if (sysfs_create_group(cpufreq_global_kobject, &dkp_attr_group))
+		pr_err("Unable to create dkp group!\n");
+
 	if (sysfs_create_group(cpufreq_global_kobject, &vdd_attr_group))
 		pr_err("Unable to create vdd_table group!\n");
 
+	/* I feel so naughty */
 	cpufreq_freq_attr_scaling_available_freqs.show = show_available_freqs;
 
 	return 0;
