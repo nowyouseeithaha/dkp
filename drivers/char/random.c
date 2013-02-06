@@ -290,7 +290,7 @@ static int random_read_wakeup_thresh = 64;
  * should wake up processes which are selecting or polling on write
  * access to /dev/random.
  */
-static int random_write_wakeup_thresh = 128;
+static int random_write_wakeup_thresh = 1024;
 
 /*
  * When the input pool goes over trickle_thresh, start dropping most
@@ -298,6 +298,12 @@ static int random_write_wakeup_thresh = 128;
  */
 
 static int trickle_thresh __read_mostly = INPUT_POOL_WORDS * 28;
+
+/*
+ * Track pool depletions.  Any time insufficient entropy is available for a
+ * read, this counter is incremented.
+ */
+static int random_depletions = 0;
 
 static DEFINE_PER_CPU(int, trickle_count);
 
@@ -865,6 +871,7 @@ static size_t account(struct entropy_store *r, size_t nbytes, int min,
 
 	/* Can we pull enough? */
 	if (r->entropy_count / 8 < min + reserved) {
+		random_depletions++;
 		nbytes = 0;
 	} else {
 		/* If limited, never pull more than available */
@@ -1428,6 +1435,13 @@ ctl_table random_table[] = {
 		.maxlen		= 16,
 		.mode		= 0444,
 		.proc_handler	= proc_do_uuid,
+	},
+	{
+		.procname	= "pool_depletions",
+		.data		= &random_depletions,
+		.maxlen		= sizeof(int),
+		.mode		= 0444,
+		.proc_handler	= proc_dointvec,
 	},
 	{ }
 };
