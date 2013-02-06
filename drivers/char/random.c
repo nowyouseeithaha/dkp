@@ -327,8 +327,8 @@ static int random_depletions = 0;
 static int urandom_is_erandom = 0;
 static int max_is_erandom = 1, min_is_erandom = 0;
 
-DEFINE_MUTEX(erandom_mutex);
-char erandom_seeded;
+static DEFINE_MUTEX(erandom_mutex);
+static char erandom_seeded = 0;
 static struct frandom_state {
 	u8 S[256];
 	u8 i;
@@ -1224,7 +1224,7 @@ static void erandom_get_random_bytes(char *buf, size_t count) {
         unsigned int j;
         u8 *S;
 
-	if (!mutex_trylock(&erandom_mutex)) {
+	if (mutex_lock_interruptible(&erandom_mutex)) {
                 get_random_bytes(buf, count);
                 return;
         }
