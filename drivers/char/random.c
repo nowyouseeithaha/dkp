@@ -1437,7 +1437,7 @@ ctl_table random_table[] = {
 		.proc_handler	= proc_do_uuid,
 	},
 	{
-		.procname	= "depletions",
+		.procname	= "pool_depletions",
 		.data		= &random_depletions,
 		.maxlen		= sizeof(int),
 		.mode		= 0444,
