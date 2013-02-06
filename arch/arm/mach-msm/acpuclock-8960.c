@@ -15,7 +15,7 @@
 #define MAX_BUS_LVL 7
 //#define ENABLE_VMIN
 
-unsigned int final_vmin = 1150000;
+static unsigned int final_vmin = 1150000;
 
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
@@ -1951,7 +1951,7 @@ ssize_t acpuclk_store_vdd_table(const char *buf, size_t count) {
 			adjust *= 1000;
 	}
 	if (ret == 1) {
-		if (acpuclk_update_all_vdd(adjust * 1000) == 1)
+		if (acpuclk_update_all_vdd(adjust) == 1)
 			return count;
 		else
 			return -EINVAL;
@@ -2045,7 +2045,7 @@ static ssize_t store_vmin(struct kobject *kobj, struct attribute *attr,
 		 const char *buf, size_t count) {
 	unsigned int temp;
 	if (sscanf(buf, "%u", &temp) == 1) {
-		if (temp > 700 && temp < 1400) {
+		if (temp >= 700 && temp <= 1400) {
 			final_vmin = temp * 1000;
 			return count;
 		}
