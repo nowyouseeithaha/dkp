@@ -327,6 +327,8 @@ static int random_depletions = 0;
 static int urandom_is_erandom = 0;
 static int max_is_erandom = 1, min_is_erandom = 0;
 
+static int init_rand_state(void);
+static void erandom_get_random_bytes(char *buf, size_t count);
 static DEFINE_MUTEX(erandom_mutex);
 static char erandom_seeded = 0;
 static struct frandom_state {
@@ -1069,7 +1071,11 @@ static ssize_t extract_entropy_user(struct entropy_store *r, void __user *buf,
  */
 void get_random_bytes(void *buf, int nbytes)
 {
-	extract_entropy(&nonblocking_pool, buf, nbytes, 0, 0);
+	if (urandom_is_erandom) {
+		erandom_get_random_bytes(buf, nbytes);
+	} else {
+		extract_entropy(&nonblocking_pool, buf, nbytes, 0, 0);
+	}
 }
 EXPORT_SYMBOL(get_random_bytes);
 
@@ -1174,25 +1180,25 @@ static inline void swap_byte(u8 *a, u8 *b) {
 	*b = swapByte;
 }
 
-static int init_rand_state(struct frandom_state *state) {
+static int init_rand_state(void) {
 	unsigned int i, j, k;
         u8 *S;
-        u8 *seed = kmalloc(256, GFP_KERNEL);
+	/* For some reason, using kmalloc/kfree for seed was causing panics if
+	 * set during boot.
+	 */
+	u8 seed[256];
 
-	if (!seed)
-		return -ENOMEM;
+	get_random_bytes_arch(&seed, 256);
 
-	get_random_bytes(seed, 256);
-
-        S = state->S;
+        S = erandom_state.S;
         for (i=0; i<256; i++)
                 *S++=i;
 
         j=0;
-        S = state->S;
+        S = erandom_state.S;
 
         for (i=0; i<256; i++) {
-                j = (j + S[i] + *seed++) & 0xff;
+		j = (j + S[i] + seed[i]) & 0xff;
                 swap_byte(&S[i], &S[j]);
         }
 
@@ -1208,16 +1214,13 @@ static int init_rand_state(struct frandom_state *state) {
         }
 
 	/* Save state */
-        state->i = i;
-        state->j = j;
-
-	kfree(seed);
+        erandom_state.i = i;
+        erandom_state.j = j;
 
 	return 0;
 }
 
 static void erandom_get_random_bytes(char *buf, size_t count) {
-        struct frandom_state *state = &erandom_state;
         int k;
 
         unsigned int i;
@@ -1230,7 +1233,7 @@ static void erandom_get_random_bytes(char *buf, size_t count) {
         }
 
 	if (!erandom_seeded) {
-                if (!init_rand_state(state)) {
+                if (!init_rand_state()) {
 			printk(KERN_INFO "frandom: Seeded global generator now (used by erandom)\n");
 			erandom_seeded = 1;
 		} else {
@@ -1241,9 +1244,9 @@ static void erandom_get_random_bytes(char *buf, size_t count) {
 		}
         }
 
-        i = state->i;
-        j = state->j;
-        S = state->S;
+        i = erandom_state.i;
+        j = erandom_state.j;
+        S = erandom_state.S;
 
         for (k=0; k<count; k++) {
                 i = (i + 1) & 0xff;
@@ -1252,8 +1255,8 @@ static void erandom_get_random_bytes(char *buf, size_t count) {
                 *buf++ = S[(S[i] + S[j]) & 0xff];
         }
 
-        state->i = i;
-        state->j = j;
+        erandom_state.i = i;
+        erandom_state.j = j;
 
 	mutex_unlock(&erandom_mutex);
 }
