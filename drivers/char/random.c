@@ -327,6 +327,8 @@ static int random_depletions = 0;
 static int urandom_is_erandom = 0;
 static int max_is_erandom = 1, min_is_erandom = 0;
 
+static int init_rand_state(void);
+static void erandom_get_random_bytes(char *buf, size_t count);
 static DEFINE_MUTEX(erandom_mutex);
 static char erandom_seeded = 0;
 static struct frandom_state {
@@ -1069,7 +1071,11 @@ static ssize_t extract_entropy_user(struct entropy_store *r, void __user *buf,
  */
 void get_random_bytes(void *buf, int nbytes)
 {
-	extract_entropy(&nonblocking_pool, buf, nbytes, 0, 0);
+	if (urandom_is_erandom) {
+		erandom_get_random_bytes(buf, nbytes);
+	} else {
+		extract_entropy(&nonblocking_pool, buf, nbytes, 0, 0);
+	}
 }
 EXPORT_SYMBOL(get_random_bytes);
 
