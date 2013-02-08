@@ -1228,7 +1228,7 @@ static void erandom_get_random_bytes(char *buf, size_t count) {
         u8 *S;
 
 	if (mutex_lock_interruptible(&erandom_mutex)) {
-                get_random_bytes(buf, count);
+                get_random_bytes_arch(buf, count);
                 return;
         }
 
@@ -1239,7 +1239,7 @@ static void erandom_get_random_bytes(char *buf, size_t count) {
 		} else {
 			mutex_unlock(&erandom_mutex);
 			printk(KERN_WARNING "frandom: unable to seed global generator!\n");
-			get_random_bytes(buf, count);
+			get_random_bytes_arch(buf, count);
 			return;
 		}
         }
