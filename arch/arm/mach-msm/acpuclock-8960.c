@@ -1615,7 +1615,6 @@ static void __init bus_init(unsigned int init_bw)
 
 #ifdef CONFIG_CPU_FREQ_MSM
 static struct cpufreq_frequency_table freq_table[NR_CPUS][(FREQ_TABLE_SIZE+1)];
-static unsigned int freq_table_length = 0;
 
 static void cpufreq_table_init(void)
 {
@@ -1640,8 +1639,6 @@ static void cpufreq_table_init(void)
 		}
 		/* freq_table not big enough to store all usable freqs. */
 		BUG_ON(acpu_freq_tbl[i].speed.khz != 0);
-
-		freq_table_length = freq_cnt + 1;
 
 		freq_table[cpu][freq_cnt].index = freq_cnt;
 		freq_table[cpu][freq_cnt].frequency = CPUFREQ_TABLE_END;
@@ -1936,10 +1933,12 @@ static int acpuclk_update_all_vdd(int adj) {
 ssize_t acpuclk_store_vdd_table(const char *buf, size_t count) {
 	unsigned int freq, volt;
 	int adjust, ret, idx, len, thislen;
-	char freq_unit[5];
+	char mhz_label[5], mv_label[3];
 	unsigned int table[FREQ_TABLE_SIZE];
 
-	/* "[+-]mv" adjustments, also understands uv */
+	/* "[+-]mv" adjustments, also understands uv
+	 * "echo -75" makes for simple initscripts
+	 */
 	ret = sscanf(buf, "- %i", &adjust);
 	if (ret == 1) {
 		if (adjust < 1000)
@@ -1957,17 +1956,21 @@ ssize_t acpuclk_store_vdd_table(const char *buf, size_t count) {
 			return -EINVAL;
 	}
 
-	/* "num(mhz)?: uv([um]v)?" adjustments */
-	ret = sscanf(buf, "%u %4s %u", &freq, &freq_unit[0], &volt);
-	if (ret == 3) {
-		for (idx = 0; idx < 4 && freq_unit[idx] != ':'; idx++);
-		if (freq_unit[idx] != ':') ret = 0;
-	} else {
-		/* Hack for Kernel Tuner's initscripts */
-		ret = sscanf(buf, "%u %u %4s", &freq, &volt, &freq_unit[0]);
-		if (ret != 2) ret = 0;
+	thislen = 0;
+	/* Kernel Tuner uses bare values */
+	ret = sscanf(buf, "%u %u%n", &freq, &volt, &thislen);
+	if (thislen < count - 1) {
+		/* "num(mhz)?: uv([um]v)?" adjustments
+		 * This allows tables to be saved & restored with cat
+		 */
+		ret = sscanf(buf, "%u %4s %u%n %2s%n", &freq, &mhz_label[0],
+			&volt, &thislen, &mv_label[0], &thislen);
+		if (thislen == count - 1) {
+			for (idx = 0; idx < 4 && mhz_label[idx] != ':'; idx++);
+			if (mhz_label[idx] != ':') thislen = 0;
+		}
 	}
-	if (ret) {
+	if (thislen == count - 1) {
 		while (freq < 10000) freq *= 1000;
 		while (volt < 10000) volt *= 1000;
 		if (acpuclk_update_one_vdd(freq, volt) == 1)
@@ -1977,19 +1980,21 @@ ssize_t acpuclk_store_vdd_table(const char *buf, size_t count) {
 	}
 
 	/* table adjustments */
-	for (idx = 0, len = 0; idx < freq_table_length && len < count - 1; idx++) {
+	for (idx = 0, len = 0; idx < FREQ_TABLE_SIZE && len < count - 1; idx++) {
 		ret = sscanf(buf + len, " %u%n", &table[idx], &thislen);
-		if (!ret) return -EINVAL;
+		if (!ret) break;
 		len += thislen;
 		while (table[idx] < 10000) table[idx] *= 1000;
 	}
-	if (idx == freq_table_length && len == count - 1) {
-		if (acpuclk_update_vdd_table(freq_table_length, table))
+	if (idx == FREQ_TABLE_SIZE && len == count - 1) {
+		if (acpuclk_update_vdd_table(FREQ_TABLE_SIZE, table))
 			return count;
 		else
 			return -EINVAL;
 	}
 
+	printk(KERN_DEBUG "acpuclk: don't know what this is:\n");
+	printk(KERN_DEBUG "acpuclk: %s\n", buf);
 	return -EINVAL;
 }
 ssize_t acpuclk_show_vdd_table(char *buf, char *fmt, int fdiv, int vdiv) {
