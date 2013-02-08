@@ -109,6 +109,40 @@ static struct hwrng msm_rng = {
 	.read = msm_rng_read,
 };
 
+/* Implement arch_get_random_TYPE.  Cache a full FIFO of data to avoid toggling
+ * the hwrng clock every call.
+ */
+static void *randbuf;
+static int randbuf_bytes;
+static int msm_get_random_bytes(void *data, size_t size) {
+	if (!msm_rng.priv)
+		return 0;
+	if (!randbuf) {
+		randbuf = kmalloc(MAX_HW_FIFO_SIZE, GFP_KERNEL);
+		if (!randbuf) {
+			printk(KERN_WARNING "msm_rng: can't allocate buffer\n");
+			return 0;
+		}
+	}
+	if (randbuf_bytes < size) {
+		printk(KERN_INFO "msm_rng: waking up for arch_get_random\n");
+		randbuf_bytes += msm_rng_read(&msm_rng, randbuf + randbuf_bytes,
+			MAX_HW_FIFO_SIZE - randbuf_bytes, 0);
+		if (randbuf_bytes < size) return 0;
+	}
+	memcpy(data, randbuf + randbuf_bytes - size, size);
+	randbuf_bytes -= size;
+	return size;
+}
+int arch_get_random_long(unsigned long *v) {
+	return msm_get_random_bytes((void *)v, sizeof(unsigned long));
+}
+EXPORT_SYMBOL(arch_get_random_long);
+int arch_get_random_int(unsigned int *v) {
+	return msm_get_random_bytes((void *)v, sizeof(unsigned int));
+}
+EXPORT_SYMBOL(arch_get_random_int);
+
 static int __devinit msm_rng_enable_hw(struct msm_rng_device *msm_rng_dev)
 {
 	unsigned long val = 0;

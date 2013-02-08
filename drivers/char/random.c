@@ -1182,7 +1182,7 @@ static inline void swap_byte(u8 *a, u8 *b) {
 
 static int init_rand_state(void) {
 	unsigned int i, j, k;
-        u8 *S;
+	u8 *S;
 	/* For some reason, using kmalloc/kfree for seed was causing panics if
 	 * set during boot.
 	 */
@@ -1190,50 +1190,51 @@ static int init_rand_state(void) {
 
 	get_random_bytes_arch(&seed, 256);
 
-        S = erandom_state.S;
-        for (i=0; i<256; i++)
-                *S++=i;
+	S = erandom_state.S;
+	for (i=0; i<256; i++)
+		*S++=i;
 
-        j=0;
-        S = erandom_state.S;
+	j=0;
+	S = erandom_state.S;
 
-        for (i=0; i<256; i++) {
+	for (i=0; i<256; i++) {
 		j = (j + S[i] + seed[i]) & 0xff;
-                swap_byte(&S[i], &S[j]);
-        }
+		swap_byte(&S[i], &S[j]);
+	}
 
-        /* It's considered good practice to discard the first 256 bytes
-           generated. So we do it:
-        */
+	/* It's considered good practice to discard the first 256 bytes
+	   generated. So we do it:
+	*/
 
-        i=0; j=0;
-        for (k=0; k<256; k++) {
-                i = (i + 1) & 0xff;
-                j = (j + S[i]) & 0xff;
-                swap_byte(&S[i], &S[j]);
-        }
+	i=0; j=0;
+	for (k=0; k<256; k++) {
+		i = (i + 1) & 0xff;
+		j = (j + S[i]) & 0xff;
+		swap_byte(&S[i], &S[j]);
+	}
 
 	/* Save state */
-        erandom_state.i = i;
-        erandom_state.j = j;
+	erandom_state.i = i;
+	erandom_state.j = j;
 
 	return 0;
 }
 
 static void erandom_get_random_bytes(char *buf, size_t count) {
-        int k;
+	int k;
+	unsigned long v;
 
-        unsigned int i;
-        unsigned int j;
-        u8 *S;
+	unsigned int i;
+	unsigned int j;
+	u8 *S;
 
 	if (mutex_lock_interruptible(&erandom_mutex)) {
-                get_random_bytes_arch(buf, count);
-                return;
-        }
+		get_random_bytes_arch(buf, count);
+		return;
+	}
 
 	if (!erandom_seeded) {
-                if (!init_rand_state()) {
+		if (!init_rand_state()) {
 			printk(KERN_INFO "frandom: Seeded global generator now (used by erandom)\n");
 			erandom_seeded = 1;
 		} else {
@@ -1242,21 +1243,30 @@ static void erandom_get_random_bytes(char *buf, size_t count) {
 			get_random_bytes_arch(buf, count);
 			return;
 		}
-        }
+	}
 
-        i = erandom_state.i;
-        j = erandom_state.j;
-        S = erandom_state.S;
+	i = erandom_state.i;
+	j = erandom_state.j;
+	S = erandom_state.S;
 
-        for (k=0; k<count; k++) {
-                i = (i + 1) & 0xff;
-                j = (j + S[i]) & 0xff;
-                swap_byte(&S[i], &S[j]);
-                *buf++ = S[(S[i] + S[j]) & 0xff];
-        }
+	for (k=0; k<count; k++) {
+		i = (i + 1) & 0xff;
+		j = (j + S[i]) & 0xff;
+		swap_byte(&S[i], &S[j]);
+		*buf++ = S[(S[i] + S[j]) & 0xff];
+	}
 
-        erandom_state.i = i;
-        erandom_state.j = j;
+	/* RC4 is known to be predictable and to occasionally have very short
+	 * periods.  Since we don't need to decode later, we can swap bytes
+	 * periodically to stir the pool.
+	 */
+	if (arch_get_random_long(&v)) {
+		for (; v; v >>= 16)
+			swap_byte(&S[v & 0xff], &S[(v >> 8) & 0xff]);
+	}
+
+	erandom_state.i = i;
+	erandom_state.j = j;
 
 	mutex_unlock(&erandom_mutex);
 }
