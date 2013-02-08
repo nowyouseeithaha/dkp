@@ -324,13 +324,13 @@ static int random_depletions = 0;
 /*
  * Map urandom to erandom?
  */
-static int urandom_is_erandom = 0;
+static int urandom_is_erandom;
 static int max_is_erandom = 1, min_is_erandom = 0;
 
 static int init_rand_state(void);
 static void erandom_get_random_bytes(char *buf, size_t count);
 static DEFINE_MUTEX(erandom_mutex);
-static char erandom_seeded = 0;
+static unsigned int erandom_seeded;
 static struct frandom_state {
 	u8 S[256];
 	u8 i;
@@ -1222,7 +1222,7 @@ static int init_rand_state(void) {
 
 static void erandom_get_random_bytes(char *buf, size_t count) {
 	int k;
-	unsigned long v;
+	unsigned int v;
 
 	unsigned int i;
 	unsigned int j;
@@ -1260,7 +1260,9 @@ static void erandom_get_random_bytes(char *buf, size_t count) {
 	 * periods.  Since we don't need to decode later, we can swap bytes
 	 * periodically to stir the pool.
 	 */
-	if (arch_get_random_long(&v)) {
+	if (erandom_seeded++ > 1024) {
+		erandom_seeded = 1;
+		extract_entropy(&nonblocking_pool, &v, sizeof(v), 0, 0);
 		for (; v; v >>= 16)
 			swap_byte(&S[v & 0xff], &S[(v >> 8) & 0xff]);
 	}
