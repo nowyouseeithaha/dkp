@@ -329,8 +329,8 @@ static int max_is_erandom = 1, min_is_erandom = 0;
 
 static int init_rand_state(void);
 static void erandom_get_random_bytes(char *buf, size_t count);
-static DEFINE_MUTEX(erandom_mutex);
-static char erandom_seeded = 0;
+static DEFINE_SEMAPHORE(erandom_sem);
+static unsigned int erandom_seeded = 0;
 static struct frandom_state {
 	u8 S[256];
 	u8 i;
@@ -1228,7 +1228,7 @@ static void erandom_get_random_bytes(char *buf, size_t count) {
 	unsigned int j;
 	u8 *S;
 
-	if (mutex_lock_interruptible(&erandom_mutex)) {
+	if (down_interruptible(&erandom_sem)) {
 		get_random_bytes_arch(buf, count);
 		return;
 	}
@@ -1238,7 +1238,7 @@ static void erandom_get_random_bytes(char *buf, size_t count) {
 			printk(KERN_INFO "frandom: Seeded global generator now (used by erandom)\n");
 			erandom_seeded = 1;
 		} else {
-			mutex_unlock(&erandom_mutex);
+			up(&erandom_sem);
 			printk(KERN_WARNING "frandom: unable to seed global generator!\n");
 			get_random_bytes_arch(buf, count);
 			return;
@@ -1260,15 +1260,18 @@ static void erandom_get_random_bytes(char *buf, size_t count) {
 	 * periods.  Since we don't need to decode later, we can swap bytes
 	 * periodically to stir the pool.
 	 */
-	if (arch_get_random_long(&v)) {
-		for (; v; v >>= 16)
-			swap_byte(&S[v & 0xff], &S[(v >> 8) & 0xff]);
+	if (erandom_seeded++ > 1024) {
+		if (arch_get_random_long(&v)) {
+			erandom_seeded = 1;
+			for (; v; v >>= 16)
+				swap_byte(&S[v & 0xff], &S[(v >> 8) & 0xff]);
+		}
 	}
 
 	erandom_state.i = i;
 	erandom_state.j = j;
 
-	mutex_unlock(&erandom_mutex);
+	up(&erandom_sem);
 }
 
 static ssize_t

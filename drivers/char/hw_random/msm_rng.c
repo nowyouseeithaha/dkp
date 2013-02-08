@@ -24,6 +24,7 @@
 #include <linux/types.h>
 #include <mach/msm_iomap.h>
 #include <mach/socinfo.h>
+#include <linux/semaphore.h>
 
 #define DRIVER_NAME "msm_rng"
 
@@ -112,26 +113,31 @@ static struct hwrng msm_rng = {
 /* Implement arch_get_random_TYPE.  Cache a full FIFO of data to avoid toggling
  * the hwrng clock every call.
  */
+#define RANDBUF_SIZE 512
 static void *randbuf;
 static int randbuf_bytes;
+static DEFINE_SEMAPHORE(randbuf_sem);
 static int msm_get_random_bytes(void *data, size_t size) {
 	if (!msm_rng.priv)
 		return 0;
+	/* There's no reason to wait for this lock. */
+	if (down_trylock(&randbuf_sem))
+		return 0;
 	if (!randbuf) {
-		randbuf = kmalloc(MAX_HW_FIFO_SIZE, GFP_KERNEL);
+		randbuf = kmalloc(RANDBUF_SIZE, GFP_KERNEL);
 		if (!randbuf) {
 			printk(KERN_WARNING "msm_rng: can't allocate buffer\n");
 			return 0;
 		}
 	}
 	if (randbuf_bytes < size) {
-		printk(KERN_INFO "msm_rng: waking up for arch_get_random\n");
 		randbuf_bytes += msm_rng_read(&msm_rng, randbuf + randbuf_bytes,
-			MAX_HW_FIFO_SIZE - randbuf_bytes, 0);
+			RANDBUF_SIZE - randbuf_bytes, 0);
 		if (randbuf_bytes < size) return 0;
 	}
 	memcpy(data, randbuf + randbuf_bytes - size, size);
 	randbuf_bytes -= size;
+	up(&randbuf_sem);
 	return size;
 }
 int arch_get_random_long(unsigned long *v) {
