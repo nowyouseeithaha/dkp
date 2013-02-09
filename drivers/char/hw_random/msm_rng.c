@@ -147,7 +147,6 @@ int arch_get_random_int(unsigned int *v) {
 }
 EXPORT_SYMBOL(arch_get_random_int);
 
->>>>>>> hwrng
 static int __devinit msm_rng_enable_hw(struct msm_rng_device *msm_rng_dev)
 {
 	unsigned long val = 0;
