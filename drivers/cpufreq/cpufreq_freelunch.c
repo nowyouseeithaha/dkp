@@ -96,6 +96,8 @@ static struct dbs_tuners {
 	unsigned int hotplug_down_usage;
 
 	unsigned int overestimate_khz;
+	unsigned int hispeed_thresh;
+	unsigned int hispeed_decrease;
 
 	unsigned int interaction_sampling_rate;
 	unsigned int interaction_overestimate_khz;
@@ -103,7 +105,6 @@ static struct dbs_tuners {
 	unsigned int interaction_return_cycles;
 
 	unsigned int interaction_hispeed;
-	unsigned int hispeed_decrease;
 } dbs_tuners_ins = {
 	/* Pretty reasonable defaults */
 	.sampling_rate = 35000, /* 2 vsyncs */
@@ -114,12 +115,13 @@ static struct dbs_tuners {
 	.hotplug_up_usage = 40,
 	.hotplug_down_usage = 15,
 	.overestimate_khz = 75000,
+	.hispeed_thresh = 25000,
+	.hispeed_decrease = 25000,
 	.interaction_sampling_rate = 10000,
 	.interaction_overestimate_khz = 175000,
 	.interaction_return_usage = 5, /* crazy low, but XDA sucks otherwise */
 	.interaction_return_cycles = 4, /* 3 vsyncs */
-	.interaction_hispeed = 1188000,
-	.hispeed_decrease = 25000,
+	.interaction_hispeed = 1350000,
 };
 // }}}
 // {{{2 support function crap
@@ -227,12 +229,13 @@ i_am_lazy(hotplug_up_load, 0, 10)
 i_am_lazy(hotplug_up_usage, 0, 100)
 i_am_lazy(hotplug_down_usage, 0, 100)
 i_am_lazy(overestimate_khz, 0, 500000)
+i_am_lazy(hispeed_thresh, 0, 500000)
+i_am_lazy(hispeed_decrease, 0, 4000000)
 i_am_lazy(interaction_sampling_rate, 10000, 1000000)
 i_am_lazy(interaction_overestimate_khz, 0, 500000)
 i_am_lazy(interaction_return_usage, 0, 100)
 i_am_lazy(interaction_return_cycles, 0, 100)
 i_am_lazy(interaction_hispeed, 0, 4000000)
-i_am_lazy(hispeed_decrease, 0, 4000000)
 
 static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b,
 				   const char *buf, size_t count)
@@ -293,12 +296,13 @@ static struct attribute *dbs_attributes[] = {
 	&hotplug_up_usage.attr,
 	&hotplug_down_usage.attr,
 	&overestimate_khz.attr,
+	&hispeed_thresh.attr,
+	&hispeed_decrease.attr,
 	&interaction_sampling_rate.attr,
 	&interaction_overestimate_khz.attr,
 	&interaction_return_usage.attr,
 	&interaction_return_cycles.attr,
 	&interaction_hispeed.attr,
-	&hispeed_decrease.attr,
 	NULL
 };
 
@@ -373,10 +377,12 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* Hotplug? */
 	if (num_online_cpus() == 1) {
 #if 1
+		// RAWR!
 		if (nr_running() >= dbs_tuners_ins.hotplug_up_load) {
 			if ((this_dbs_info->hotplug_cycle++ >= dbs_tuners_ins.hotplug_up_cycles) &&
 				load > policy->max * dbs_tuners_ins.hotplug_up_usage / 100) {
 #else
+		// meow.
 		if (nr_running() >= dbs_tuners_ins.hotplug_up_load &&
 			load > policy->max * dbs_tuners_ins.hotplug_up_usage / 100) {
 			if (this_dbs_info->hotplug_cycle++ >= dbs_tuners_ins.hotplug_up_cycles) {
@@ -427,9 +433,13 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	}
 
 	/* Set frequency */
-	this_dbs_info->requested_freq += load + overestimate > policy->cur ?
+	//this_dbs_info->requested_freq += load + overestimate > policy->cur ?
+	this_dbs_info->requested_freq += load + dbs_tuners_ins.hispeed_thresh > policy->cur ?
 		this_dbs_info->max_freq : load + overestimate;
-	/* Bound request just outside available range */
+	/* Bound request just outside available range
+	 * Ideally, this helps stabilize idle @ min, load @ max
+	 */
+	/*
 	fml = (policy->min < overestimate ? 0 : policy->min - overestimate);
 	if (this_dbs_info->requested_freq > policy->cur) {
 		this_dbs_info->requested_freq -= policy->cur;
@@ -440,6 +450,11 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	} else {
 		this_dbs_info->requested_freq = fml;
 	}
+	*/
+	/* Bound freq to 0..max+oe*2 */
+	this_dbs_info->requested_freq -= min(this_dbs_info->requested_freq, policy->cur);
+	if (this_dbs_info->requseted_freq > policy->max + overestimate * 2)
+		this_dbs_info->requseted_freq = policy->max + overestimate * 2;
 
 	__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
 		CPUFREQ_RELATION_H);
