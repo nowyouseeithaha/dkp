@@ -270,7 +270,7 @@
 #include <linux/fips.h>
 #include <linux/ptrace.h>
 #include <linux/kmemcheck.h>
-#include <linux/mutex.h>
+//#include <linux/mutex.h>
 
 #ifdef CONFIG_GENERIC_HARDIRQS
 # include <linux/irq.h>
@@ -324,18 +324,21 @@ static int random_depletions = 0;
 /*
  * Map urandom to erandom?
  */
-static int urandom_is_erandom = 0;
-static int max_is_erandom = 1, min_is_erandom = 0;
-
 static int init_rand_state(void);
 static void erandom_get_random_bytes(char *buf, size_t count);
-static DEFINE_SEMAPHORE(erandom_sem);
+//static DEFINE_SEMAPHORE(erandom_sem);
+static DEFINE_SPINLOCK(erandom_lock);
 static unsigned int erandom_seeded = 0;
 static struct frandom_state {
 	u8 S[256];
 	u8 i;
 	u8 j;
 } erandom_state;
+/*
+static u8 erandom_S[256];
+static u8 erandom_i;
+static u8 erandom_j;
+*/
 
 static DEFINE_PER_CPU(int, trickle_count);
 
@@ -1071,11 +1074,8 @@ static ssize_t extract_entropy_user(struct entropy_store *r, void __user *buf,
  */
 void get_random_bytes(void *buf, int nbytes)
 {
-	if (urandom_is_erandom) {
-		erandom_get_random_bytes(buf, nbytes);
-	} else {
-		extract_entropy(&nonblocking_pool, buf, nbytes, 0, 0);
-	}
+	erandom_get_random_bytes(buf, nbytes);
+	//get_random_bytes_arch(buf, nbytes);
 }
 EXPORT_SYMBOL(get_random_bytes);
 
@@ -1153,6 +1153,9 @@ static int rand_initialize(void)
 	init_std_data(&input_pool);
 	init_std_data(&blocking_pool);
 	init_std_data(&nonblocking_pool);
+	//if (!init_rand_state())
+	//if (0)
+		//erandom_seeded = 1;
 	return 0;
 }
 module_init(rand_initialize);
@@ -1180,8 +1183,10 @@ static inline void swap_byte(u8 *a, u8 *b) {
 	*b = swapByte;
 }
 
+//#define e(x) erandom_##x
 static int init_rand_state(void) {
 	unsigned int i, j, k;
+	//unsigned int k;
 	u8 *S;
 	/* For some reason, using kmalloc/kfree for seed was causing panics if
 	 * set during boot.
@@ -1191,10 +1196,13 @@ static int init_rand_state(void) {
 	get_random_bytes_arch(&seed, 256);
 
 	S = erandom_state.S;
+	//S = e(S);
 	for (i=0; i<256; i++)
 		*S++=i;
 
+	//e(j)=0;
 	j=0;
+	//S = e(S);
 	S = erandom_state.S;
 
 	for (i=0; i<256; i++) {
@@ -1222,32 +1230,45 @@ static int init_rand_state(void) {
 
 static void erandom_get_random_bytes(char *buf, size_t count) {
 	int k;
-	unsigned long v;
+	unsigned long v, flags;
 
 	unsigned int i;
 	unsigned int j;
 	u8 *S;
 
-	if (down_interruptible(&erandom_sem)) {
+	/*if (down_interruptible(&erandom_sem)) {
 		get_random_bytes_arch(buf, count);
 		return;
-	}
+	}*/
 
-	if (!erandom_seeded) {
+	spin_lock_irqsave(&erandom_lock, flags);
+
+	/* FUCK. */
+	if (unlikely(!erandom_seeded)) {
 		if (!init_rand_state()) {
 			printk(KERN_INFO "frandom: Seeded global generator now (used by erandom)\n");
 			erandom_seeded = 1;
 		} else {
-			up(&erandom_sem);
+			//up(&erandom_sem);
+			spin_unlock_irqrestore(&erandom_lock, flags);
 			printk(KERN_WARNING "frandom: unable to seed global generator!\n");
 			get_random_bytes_arch(buf, count);
 			return;
 		}
 	}
+	/*
+	if (!erandom_seeded) {
+		spin_unlock_irqrestore(&erandom_lock, flags);
+		printk(KERN_WARNING "erandom: getting bytes before seed.  wtf?\n");
+		get_random_bytes_arch(buf, count);
+		return;
+	}
+	*/
 
 	i = erandom_state.i;
 	j = erandom_state.j;
 	S = erandom_state.S;
+	//S = erandom_S;
 
 	for (k=0; k<count; k++) {
 		i = (i + 1) & 0xff;
@@ -1271,8 +1292,72 @@ static void erandom_get_random_bytes(char *buf, size_t count) {
 	erandom_state.i = i;
 	erandom_state.j = j;
 
-	up(&erandom_sem);
+	//up(&erandom_sem);
+	spin_unlock_irqrestore(&erandom_lock, flags);
 }
+
+//static ssize_t erandom_read(char *buf, size_t count) {
+static ssize_t
+erandom_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos) {
+	int k;
+	unsigned long v, flags;
+
+	unsigned int i;
+	unsigned int j;
+	u8 *S;
+	u8 tmp[16];
+	ssize_t ret = nbytes;
+
+	spin_lock(&erandom_lock, flags);
+
+	/* FUCK. */
+	if (unlikely(!erandom_seeded)) {
+		if (!init_rand_state()) {
+			printk(KERN_INFO "frandom: Seeded global generator now (used by erandom)\n");
+			erandom_seeded = 1;
+		} else {
+			//up(&erandom_sem);
+			spin_unlock(&erandom_lock, flags);
+			printk(KERN_WARNING "frandom: unable to seed global generator!\n");
+			get_random_bytes_arch(buf, nbytes);
+			return;
+		}
+	}
+
+	i = erandom_state.i;
+	j = erandom_state.j;
+	S = erandom_state.S;
+
+	while (nbytes) {
+		for (k=0; k<min(nbytes, 16); k++) {
+			i = (i + 1) & 0xff;
+			j = (j + S[i]) & 0xff;
+			swap_byte(&S[i], &S[j]);
+			tmp[k] = S[(S[i] + S[j]) & 0xff];
+		}
+		if (copy_to_user(buf, tmp, min(nbytes, 16)))
+			return -EFAULT;
+	}
+
+	/* RC4 is known to be predictable and to occasionally have very short
+	 * periods.  Since we don't need to decode later, we can swap bytes
+	 * periodically to stir the pool.
+	 */
+	if (erandom_seeded++ > 1024) {
+		if (arch_get_random_long(&v)) {
+			erandom_seeded = 1;
+			for (; v; v >>= 16)
+				swap_byte(&S[v & 0xff], &S[(v >> 8) & 0xff]);
+		}
+	}
+
+	erandom_state.i = i;
+	erandom_state.j = j;
+
+	spin_unlock(&erandom_lock, flags);
+}
+
+//#undef e
 
 static ssize_t
 random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
@@ -1333,12 +1418,8 @@ random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 static ssize_t
 urandom_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 {
-	if (urandom_is_erandom) {
-		erandom_get_random_bytes(buf, nbytes);
-		return nbytes;
-	} else {
-		return extract_entropy_user(&nonblocking_pool, buf, nbytes);
-	}
+	erandom_get_random_bytes(buf, nbytes);
+	return nbytes;
 }
 
 static unsigned int
@@ -1586,15 +1667,6 @@ ctl_table random_table[] = {
 		.mode		= 0444,
 		.proc_handler	= proc_dointvec,
 	},
-	{
-		.procname	= "urandom_is_erandom",
-		.data		= &urandom_is_erandom,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= &min_is_erandom,
-		.extra2		= &max_is_erandom,
-	},
 	{ }
 };
 #endif 	/* CONFIG_SYSCTL */
@@ -1614,6 +1686,7 @@ late_initcall(random_int_secret_init);
  * value is not cryptographically secure but for several uses the cost of
  * depleting entropy is too high
  */
+#if 0
 DEFINE_PER_CPU(__u32 [MD5_DIGEST_WORDS], get_random_int_hash);
 unsigned int get_random_int(void)
 {
@@ -1632,6 +1705,13 @@ unsigned int get_random_int(void)
 
 	return ret;
 }
+#else
+unsigned int get_random_int(void) {
+	unsigned int ret;
+	erandom_get_random_bytes((char *)&ret, sizeof(ret));
+	return ret;
+}
+#endif
 
 /*
  * randomize_range() returns a start address such that
