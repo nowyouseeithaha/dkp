@@ -15,7 +15,7 @@
 #define MAX_BUS_LVL 7
 //#define ENABLE_VMIN
 
-static unsigned int final_vmin = 1150000;
+static unsigned int final_vmin = 700000;
 
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
@@ -1712,7 +1712,6 @@ static struct notifier_block __cpuinitdata acpuclock_cpu_notifier = {
 	.notifier_call = acpuclock_cpu_callback,
 };
 
-#ifdef ENABLE_VMIN
 static const int krait_needs_vmin(void)
 {
 	switch (read_cpuid_id()) {
@@ -1725,6 +1724,7 @@ static const int krait_needs_vmin(void)
 	};
 }
 
+#ifdef ENABLE_VMIN
 static void kraitv2_apply_vmin(struct acpu_level *tbl)
 {
 	for (; tbl->speed.khz != 0; tbl++)
@@ -1866,9 +1866,11 @@ static struct acpu_level * __init select_freq_plan(void)
 	} else {
 		BUG();
 	}
-#ifdef ENABLE_VMIN
 	if (krait_needs_vmin())
+#ifdef ENABLE_VMIN
 		kraitv2_apply_vmin(acpu_freq_tbl);
+#else
+		final_vmin = 1150000;
 #endif
 
 	/* Find the max supported scaling frequency. */
