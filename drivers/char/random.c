@@ -1203,7 +1203,7 @@ static void init_rand_state(void) {
 
 static void _erandom_get_random_bytes(char *buf, size_t count) {
 	int k;
-	unsigned long v;
+	long unsigned int v;
 
 	for (k=0; k<count; k++) {
 		erandom_i = (erandom_i + 1) & 0xff;
