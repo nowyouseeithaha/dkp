@@ -115,26 +115,15 @@ static struct hwrng msm_rng = {
  */
 #define RANDBUF_SIZE 512
 static void *randbuf;
-//static u8 randbuf_mem[RANDBUF_SIZE];
 static int randbuf_bytes;
-//static DEFINE_SEMAPHORE(randbuf_sem);
 static DEFINE_SPINLOCK(randbuf_lock);
 static int msm_get_random_bytes(void *data, size_t size) {
 	unsigned long flags;
-	//void *randbuf = (void *)&randbuf_mem[0];
-	//if (!msm_rng.priv)
-		//return 0;
-	/* There's no reason to wait for this lock. */
-	//if (down_trylock(&randbuf_sem))
-		//return 0;
-	//if (!randbuf)
-		//return 0;
-	printk(KERN_DEBUG "msm_rng: lock get!\n");
 	spin_lock_irqsave(&randbuf_lock, flags);
 	if (randbuf_bytes < size) {
 		if (!msm_rng.priv || !randbuf) {
 			spin_unlock_irqrestore(&randbuf_lock, flags);
-			printk(KERN_WARNING "msm_rng: getting bytes before init.  wtf?\n");
+			printk(KERN_WARNING "msm_rng: not initialized correctly\n");
 			return 0;
 		}
 		randbuf_bytes += msm_rng_read(&msm_rng, randbuf + randbuf_bytes,
@@ -146,18 +135,15 @@ static int msm_get_random_bytes(void *data, size_t size) {
 	}
 	memcpy(data, randbuf + randbuf_bytes - size, size);
 	randbuf_bytes -= size;
-	//up(&randbuf_sem);
 	spin_unlock_irqrestore(&randbuf_lock, flags);
 	return size;
 }
 int arch_get_random_long(unsigned long *v) {
-	//return msm_get_random_bytes((void *)v, sizeof(unsigned long));
-	return 0;
+	return msm_get_random_bytes((void *)v, sizeof(unsigned long));
 }
 EXPORT_SYMBOL(arch_get_random_long);
 int arch_get_random_int(unsigned int *v) {
-	//return msm_get_random_bytes((void *)v, sizeof(unsigned int));
-	return 0;
+	return msm_get_random_bytes((void *)v, sizeof(unsigned int));
 }
 EXPORT_SYMBOL(arch_get_random_int);
 
