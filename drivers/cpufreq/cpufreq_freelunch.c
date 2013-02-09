@@ -121,7 +121,7 @@ static struct dbs_tuners {
 	.interaction_overestimate_khz = 175000,
 	.interaction_return_usage = 5, /* crazy low, but XDA sucks otherwise */
 	.interaction_return_cycles = 4, /* 3 vsyncs */
-	.interaction_hispeed = 1350000,
+	.interaction_hispeed = 1188000,
 };
 // }}}
 // {{{2 support function crap
@@ -433,13 +433,12 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	}
 
 	/* Set frequency */
-	//this_dbs_info->requested_freq += load + overestimate > policy->cur ?
 	this_dbs_info->requested_freq += load + dbs_tuners_ins.hispeed_thresh > policy->cur ?
 		this_dbs_info->max_freq : load + overestimate;
+#if 1
 	/* Bound request just outside available range
 	 * Ideally, this helps stabilize idle @ min, load @ max
 	 */
-	/*
 	fml = (policy->min < overestimate ? 0 : policy->min - overestimate);
 	if (this_dbs_info->requested_freq > policy->cur) {
 		this_dbs_info->requested_freq -= policy->cur;
@@ -450,11 +449,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	} else {
 		this_dbs_info->requested_freq = fml;
 	}
-	*/
-	/* Bound freq to 0..max+oe*2 */
+#else
+	/* Bound freq to 0..max+oe*2
+	 * This will be horrible for performance, but not bad for battery
+	 */
 	this_dbs_info->requested_freq -= min(this_dbs_info->requested_freq, policy->cur);
 	if (this_dbs_info->requseted_freq > policy->max + overestimate * 2)
 		this_dbs_info->requseted_freq = policy->max + overestimate * 2;
+#endif
 
 	__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
 		CPUFREQ_RELATION_H);
