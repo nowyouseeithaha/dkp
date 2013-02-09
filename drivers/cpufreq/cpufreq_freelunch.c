@@ -5,7 +5,7 @@
  *            (C)  2003 Venkatesh Pallipadi <venkatesh.pallipadi@intel.com>.
  *                      Jun Nakajima <jun.nakajima@intel.com>
  *            (C)  2009 Alexander Clouter <alex@digriz.org.uk>
- *            (C)  2012 Ryan Pennucci <decimalman@gmail.com>
+ *            (C)  2013 Ryan Pennucci <decimalman@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,24 +16,9 @@
  * - Interactive mode defers forever in lockscreen.  Seems unfixable without
  *   causing other issues, and I don't care anyway.  Don't leave your
  *   lockscreen on.  Problem solved.
- * - Recents animations are sometimes choppy.  Seems unfixable, and even
- *   Interactive has issues with it (though to a lesser extent).
+ * - Recents and home animations are sometimes choppy.  Seems unfixable, and
+ *   even Interactive has issues with them (though to a lesser extent).
  * - XDA app scrolling sucks.  Complain to Tapatalk, not me.
- * - Netflix playback is sometimes choppy.  Increase overestimate_khz to 75000
- *   or so.
- */
-
-/* Current interaction hacks:
- * 0:       - off
- * 1: KEEP  - old freelunch
- * 2: KEEP  - unscaled freelunch & upper bound
- * 3: MAYBE - "ondemand"
- * 4: KEEP  - "ondemand" with 2 samples
- * 5: KEEP  - weighted ramp & upper bound
- * 6: MAYBE - "ondemand" & upper bound
- * 7: MAYBE - freelunch & both bounds
- * 8: MAYBE - weighted ramp & both bounds
- * 9: MAYBE - "ondemand" & both bounds
  */
 
 #include <linux/kernel.h>
@@ -50,6 +35,15 @@
 #include <linux/sched.h>
 #include <linux/err.h>
 #include <linux/slab.h>
+
+enum interaction_flags {
+	IFLAG_PRESSED = 1,
+	IFLAG_RUNNING = 2,
+	IFLAG_ENABLED = 1 | 2,
+};
+#define IGF(x) (this_dbs_info->is_interactive & IFLAG_##x)
+#define ISF(x) this_dbs_info->is_interactive |= IFLAG_##x
+#define IUF(x) this_dbs_info->is_interactive &= ~IFLAG_##x
 
 // {{{1 tuner crap
 static void do_dbs_timer(struct work_struct *work);
@@ -74,10 +68,9 @@ struct cpu_dbs_info_s {
 
 	/* Interaction hack stuff */
 	int is_interactive;
-	unsigned int last_load;
-	unsigned int hack_temp;
 	unsigned int defer_cycles;
 	unsigned int deferred_return;
+	unsigned int max_freq;
 };
 static DEFINE_PER_CPU(struct cpu_dbs_info_s, cs_cpu_dbs_info);
 
@@ -104,26 +97,29 @@ static struct dbs_tuners {
 
 	unsigned int overestimate_khz;
 
-	unsigned int interaction_hack;
 	unsigned int interaction_sampling_rate;
 	unsigned int interaction_overestimate_khz;
 	unsigned int interaction_return_usage;
 	unsigned int interaction_return_cycles;
+
+	unsigned int interaction_hispeed;
+	unsigned int hispeed_decrease;
 } dbs_tuners_ins = {
 	/* Pretty reasonable defaults */
 	.sampling_rate = 35000, /* 2 vsyncs */
 	.ignore_nice = 0,
-	.hotplug_up_cycles = 1,
-	.hotplug_down_cycles = 1,
+	.hotplug_up_cycles = 3,
+	.hotplug_down_cycles = 3,
 	.hotplug_up_load = 3,
 	.hotplug_up_usage = 40,
 	.hotplug_down_usage = 15,
 	.overestimate_khz = 75000,
-	.interaction_hack = 8,
 	.interaction_sampling_rate = 10000,
 	.interaction_overestimate_khz = 175000,
-	.interaction_return_usage = 15,
+	.interaction_return_usage = 5, /* crazy low, but XDA sucks otherwise */
 	.interaction_return_cycles = 4, /* 3 vsyncs */
+	.interaction_hispeed = 1188000,
+	.hispeed_decrease = 25000,
 };
 // }}}
 // {{{2 support function crap
@@ -230,12 +226,13 @@ i_am_lazy(hotplug_down_cycles, 0, 10)
 i_am_lazy(hotplug_up_load, 0, 10)
 i_am_lazy(hotplug_up_usage, 0, 100)
 i_am_lazy(hotplug_down_usage, 0, 100)
-i_am_lazy(overestimate_khz, 0, 1000000)
-i_am_lazy(interaction_hack, 0, 10)
+i_am_lazy(overestimate_khz, 0, 500000)
 i_am_lazy(interaction_sampling_rate, 10000, 1000000)
-i_am_lazy(interaction_overestimate_khz, 0, 1000000)
+i_am_lazy(interaction_overestimate_khz, 0, 500000)
 i_am_lazy(interaction_return_usage, 0, 100)
 i_am_lazy(interaction_return_cycles, 0, 100)
+i_am_lazy(interaction_hispeed, 0, 4000000)
+i_am_lazy(hispeed_decrease, 0, 4000000)
 
 static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b,
 				   const char *buf, size_t count)
@@ -296,11 +293,12 @@ static struct attribute *dbs_attributes[] = {
 	&hotplug_up_usage.attr,
 	&hotplug_down_usage.attr,
 	&overestimate_khz.attr,
-	&interaction_hack.attr,
 	&interaction_sampling_rate.attr,
 	&interaction_overestimate_khz.attr,
 	&interaction_return_usage.attr,
 	&interaction_return_cycles.attr,
+	&interaction_hispeed.attr,
+	&hispeed_decrease.attr,
 	NULL
 };
 
@@ -326,6 +324,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	unsigned int idle_time, wall_time;
 
 	struct cpufreq_policy *policy;
+
+	unsigned int overestimate, fml;
 
 	/* Calculate load for this processor only.  The assumption is that we're
 	 * running on an aSMP processor where each core has its own instance.
@@ -359,7 +359,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	}
 
 	/* Apparently, this happens. */
-	if (idle_time > wall_time) return;
+	if (unlikely(idle_time > wall_time)) return;
 
 	/* Not needed, but why not? */
 	if (wall_time > 1000) {
@@ -370,185 +370,17 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* Assume we've only run for a small fraction of a second. */
 	load = policy->cur / wall_time * (wall_time - idle_time);
 
-	/* Interaction hack go! */
-	if (this_dbs_info->is_interactive) {
-		/* A bunch of temp vars, just in case. */
-		unsigned int t1, t2, t3;
-		int q1;
-		/* If the input drivers have released interaction, start checking if we
-		 * can return to non-interactive mode.  Don't do it immediately, since
-		 * there is probably an animation playing.
-		 */
-		if (this_dbs_info->is_interactive == 2) {
-			if (load < policy->max * dbs_tuners_ins.interaction_return_usage / 100) {
-				if (this_dbs_info->defer_cycles++ >= dbs_tuners_ins.interaction_return_cycles)
-					this_dbs_info->is_interactive = 0;
-			} else this_dbs_info->defer_cycles = 0;
-		}
-
-		/* Print deferral stats */
-		if (this_dbs_info->is_interactive == 2)
-			this_dbs_info->deferred_return++;
-		else if (this_dbs_info->is_interactive == 0)
-			printk(KERN_DEBUG "freelunch: deferred noninteractive %u cycles.\n",
-				this_dbs_info->deferred_return);
-
-		/* Bump frequency, ignoring mid-stepping values. */
-		switch (dbs_tuners_ins.interaction_hack) {
-		case 1: // Ramp
-			this_dbs_info->last_load = load;
-			this_dbs_info->requested_freq = 1000 * max(load, this_dbs_info->last_load) /
-				policy->cur * (policy->cur + dbs_tuners_ins.interaction_overestimate_khz) / 1000;
-			break;
-		case 2: // Ramp faster, keep old load
-			if (load > this_dbs_info->hack_temp) {
-				/* We're ramping up.  Add khz. */
-				this_dbs_info->hack_temp = load + dbs_tuners_ins.interaction_overestimate_khz;
-				this_dbs_info->requested_freq = load + dbs_tuners_ins.interaction_overestimate_khz;
-			} else if (load > policy->cur - dbs_tuners_ins.interaction_overestimate_khz /*&&
-				load < this_dbs_info->hack_temp*/) {
-				/* We have a previous load sample that we should restore. */
-				this_dbs_info->requested_freq = this_dbs_info->hack_temp +
-					dbs_tuners_ins.interaction_overestimate_khz;
-			} else {
-				/* We're ramping down.  Drop aggressively, and reduce saved sample. */
-				this_dbs_info->requested_freq = load + dbs_tuners_ins.interaction_overestimate_khz;
-				this_dbs_info->hack_temp -= min(this_dbs_info->hack_temp,
-					dbs_tuners_ins.interaction_overestimate_khz / 2);
-			}
-			break;
-		case 3: // Jump
-			if (load > policy->cur - dbs_tuners_ins.interaction_overestimate_khz / 2)
-				this_dbs_info->requested_freq = policy->max;
-			else
-				this_dbs_info->requested_freq = load + dbs_tuners_ins.interaction_overestimate_khz;
-			break;
-		case 4: // Jump + extra reduction sample
-			t1 = max(load, this_dbs_info->last_load);
-			this_dbs_info->last_load = load;
-			if (load > policy->cur - dbs_tuners_ins.interaction_overestimate_khz / 2)
-				this_dbs_info->requested_freq = policy->max;
-			else
-				this_dbs_info->requested_freq = t1 + dbs_tuners_ins.interaction_overestimate_khz;
-			break;
-		case 5: // Weighted ramp
-			/* Don't divide by zero or underflow or anything else */
-			if (policy->cur <= dbs_tuners_ins.interaction_overestimate_khz) break;
-			/* Calculate jump frequency.  For steady load, this increases
-			 * quickly, and often overshoots slightly before stabilizing at
-			 * load+khz.
-			 */
-			//t1 = 1000 * policy->cur / (policy->cur - dbs_tuners_ins.interaction_overestimate_khz) * load / 1000;
-			t1 = 1000 * policy->cur / (policy->cur - dbs_tuners_ins.interaction_overestimate_khz);
-			t1 = t1 * load / 1000;
-			if (t1 > this_dbs_info->hack_temp) {
-				/* We're ramping up.  Incerase freq and save to hack_temp. */
-				/* Don't save t1, since it's way too aggressive. */
-				//this_dbs_info->hack_temp = load + dbs_tuners_ins.interaction_overestimate_khz;
-				/* Save t1, but reduce it much faster. */
-				this_dbs_info->hack_temp = t1;
-				this_dbs_info->requested_freq = t1;
-			} else if (load > policy->cur - dbs_tuners_ins.interaction_overestimate_khz) {
-				/* We have a previous load sample that we should restore. */
-				this_dbs_info->requested_freq = this_dbs_info->hack_temp +
-					dbs_tuners_ins.interaction_overestimate_khz;
-			} else {
-				/* We're ramping down.  Drop aggressively, and reduce saved sample. */
-				//this_dbs_info->requested_freq = load + dbs_tuners_ins.interaction_overestimate_khz;
-				this_dbs_info->requested_freq = t1;
-				this_dbs_info->hack_temp -= min(this_dbs_info->hack_temp,
-					dbs_tuners_ins.interaction_overestimate_khz);
-			}
-			break;
-		case 6: // Jump sometimes
-			if (load > this_dbs_info->hack_temp) {
-				/* We need more cycles.  Jump to max. */
-				/* TODO This might ought to be tunable */
-				this_dbs_info->hack_temp = this_dbs_info->requested_freq = policy->max;
-			} else if (load > policy->cur - dbs_tuners_ins.interaction_overestimate_khz) {
-				/* We have a previous load sample that we should restore. */
-				this_dbs_info->requested_freq = this_dbs_info->hack_temp +
-					dbs_tuners_ins.interaction_overestimate_khz;
-			} else {
-				/* We're ramping down.  Drop aggressively, and reduce saved sample. */
-				this_dbs_info->requested_freq = load + dbs_tuners_ins.interaction_overestimate_khz;
-				this_dbs_info->hack_temp -= min(this_dbs_info->hack_temp,
-					dbs_tuners_ins.interaction_overestimate_khz);
-			}
-			break;
-		case 7: // Ramp faster + limited reduction
-		case 8: // Weighted ramp + limited reduction
-		case 9: // Jump sometimes + limited reduction
-			if (load >= policy->cur - dbs_tuners_ins.interaction_overestimate_khz) {
-				if (load < this_dbs_info->hack_temp) {
-					this_dbs_info->requested_freq = this_dbs_info->hack_temp +
-						dbs_tuners_ins.interaction_overestimate_khz;
-				} else {
-					switch (dbs_tuners_ins.interaction_hack) {
-					case 7:
-						/* TODO This should be tunable */
-						this_dbs_info->requested_freq = load + dbs_tuners_ins.interaction_overestimate_khz * 4;
-						break;
-					case 8:
-						if (policy->cur <= dbs_tuners_ins.interaction_overestimate_khz) break;
-						this_dbs_info->requested_freq = 1000 * policy->cur /
-							(policy->cur - dbs_tuners_ins.interaction_overestimate_khz) *
-							load / 1000;
-						break;
-					case 9:
-						this_dbs_info->requested_freq = policy->max;
-						break;
-					}
-					this_dbs_info->hack_temp = load;
-				}
-
-				this_dbs_info->last_load = min(load,
-					this_dbs_info->last_load + dbs_tuners_ins.interaction_overestimate_khz);
-			} else {
-				if (load < this_dbs_info->last_load) {
-					this_dbs_info->requested_freq = this_dbs_info->last_load +
-						dbs_tuners_ins.interaction_overestimate_khz;
-					this_dbs_info->last_load = load;
-				} else {
-					this_dbs_info->requested_freq = load + dbs_tuners_ins.interaction_overestimate_khz;
-				}
-
-				this_dbs_info->hack_temp -= min(this_dbs_info->hack_temp,
-					dbs_tuners_ins.interaction_overestimate_khz);
-			}
-			break;
-		default:
-			/* So there. */
-			this_dbs_info->requested_freq = policy->min;
-		}
-		/* Round up to the next stepping. */
-		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
-			CPUFREQ_RELATION_L);
-	} else {
-		/* Bump frequency, allowing mid-stepping values. */
-		this_dbs_info->requested_freq += (policy->cur + dbs_tuners_ins.overestimate_khz)
-			/ wall_time * (wall_time - idle_time);
-		this_dbs_info->requested_freq -= policy->cur;
-		/* Bounds-check the new frequency */
-		if (this_dbs_info->requested_freq < policy->min)
-			this_dbs_info->requested_freq = policy->min;
-		else if (this_dbs_info->requested_freq > policy->max)
-			this_dbs_info->requested_freq = policy->max;
-		/* Round down to the next stepping */
-		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
-			CPUFREQ_RELATION_H);
-	}
-
 	/* Hotplug? */
 	if (num_online_cpus() == 1) {
-		/*
+#if 1
 		if (nr_running() >= dbs_tuners_ins.hotplug_up_load) {
 			if ((this_dbs_info->hotplug_cycle++ >= dbs_tuners_ins.hotplug_up_cycles) &&
 				load > policy->max * dbs_tuners_ins.hotplug_up_usage / 100) {
-		*/
+#else
 		if (nr_running() >= dbs_tuners_ins.hotplug_up_load &&
 			load > policy->max * dbs_tuners_ins.hotplug_up_usage / 100) {
 			if (this_dbs_info->hotplug_cycle++ >= dbs_tuners_ins.hotplug_up_cycles) {
+#endif
 				schedule_work_on(0, &cpu_up_work);
 				this_dbs_info->hotplug_cycle = 0;
 			}
@@ -561,29 +393,80 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			}
 		} else this_dbs_info->hotplug_cycle = 0;
 	}
+
+	/* Return from interaction? */
+	if (IGF(ENABLED)) {
+		if (!IGF(PRESSED)) {
+			this_dbs_info->deferred_return++;
+			if (load < policy->max * dbs_tuners_ins.interaction_return_usage / 100) {
+				if (this_dbs_info->defer_cycles++ >= dbs_tuners_ins.interaction_return_cycles) {
+					IUF(ENABLED);
+					printk(KERN_DEBUG "freelunch: deferred noninteractive %u cycles.\n",
+						this_dbs_info->deferred_return);
+				}
+			} else this_dbs_info->defer_cycles = 0;
+		}
+		overestimate = dbs_tuners_ins.interaction_overestimate_khz;
+	} else {
+		overestimate = dbs_tuners_ins.overestimate_khz;
+	}
+
+	/* Update max_freq: will always be >= load */
+	if (!dbs_tuners_ins.hispeed_decrease) {
+		this_dbs_info->max_freq = load + overestimate;
+	} else {
+		if (IGF(PRESSED)) {
+			this_dbs_info->max_freq = max(dbs_tuners_ins.interaction_hispeed,
+				this_dbs_info->max_freq - dbs_tuners_ins.hispeed_decrease);
+		} else {
+			this_dbs_info->max_freq -= min(this_dbs_info->max_freq,
+				dbs_tuners_ins.hispeed_decrease);
+		}
+		if (load + overestimate > this_dbs_info->max_freq)
+			this_dbs_info->max_freq = load + overestimate;
+	}
+
+	/* Set frequency */
+	this_dbs_info->requested_freq += load + overestimate > policy->cur ?
+		this_dbs_info->max_freq : load + overestimate;
+	/* Bound request just outside available range */
+	fml = (policy->min < overestimate ? 0 : policy->min - overestimate);
+	if (this_dbs_info->requested_freq > policy->cur) {
+		this_dbs_info->requested_freq -= policy->cur;
+		if (this_dbs_info->requested_freq < fml)
+			this_dbs_info->requested_freq = fml;
+		else if (this_dbs_info->requested_freq > policy->max + overestimate)
+			this_dbs_info->requested_freq = policy->max + overestimate;
+	} else {
+		this_dbs_info->requested_freq = fml;
+	}
+
+	__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
+		CPUFREQ_RELATION_H);
 }
 // }}}
 // {{{2 cpufreq crap
 static void do_dbs_timer(struct work_struct *work)
 {
-	struct cpu_dbs_info_s *dbs_info =
+	struct cpu_dbs_info_s *this_dbs_info =
 		container_of(work, struct cpu_dbs_info_s, work.work);
-	unsigned int cpu = dbs_info->cpu;
+	unsigned int cpu = this_dbs_info->cpu;
 
 	/* We want all CPUs to do sampling nearly on same jiffy */
 	int delay;
-	//if (dbs_info->is_interactive) delay = usecs_to_jiffies(10000);
-	if (dbs_info->is_interactive) delay = usecs_to_jiffies(dbs_tuners_ins.interaction_sampling_rate);
-	else delay = usecs_to_jiffies(dbs_tuners_ins.sampling_rate);
+	if (IGF(ENABLED))
+		delay = usecs_to_jiffies(dbs_tuners_ins.interaction_sampling_rate);
+	else
+		delay = usecs_to_jiffies(dbs_tuners_ins.sampling_rate);
 
 	delay -= jiffies % delay;
 
-	mutex_lock(&dbs_info->timer_mutex);
+	mutex_lock(&this_dbs_info->timer_mutex);
 
-	dbs_check_cpu(dbs_info);
+	dbs_check_cpu(this_dbs_info);
 
-	schedule_delayed_work_on(cpu, &dbs_info->work, delay);
-	mutex_unlock(&dbs_info->timer_mutex);
+	schedule_delayed_work_on(cpu, &this_dbs_info->work, delay);
+	mutex_unlock(&this_dbs_info->timer_mutex);
 }
 
 static inline void dbs_timer_init(struct cpu_dbs_info_s *dbs_info)
@@ -678,9 +561,6 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 					&dbs_cpufreq_notifier_block,
 					CPUFREQ_TRANSITION_NOTIFIER);
 
-		/* Disable interactivity, probably useless */
-		this_dbs_info->is_interactive = 0;
-
 		mutex_unlock(&dbs_mutex);
 		if (!dbs_enable)
 			sysfs_remove_group(cpufreq_global_kobject,
@@ -703,35 +583,26 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		break;
 
 	case CPUFREQ_GOV_INTERACT:
-		if ((!this_dbs_info->is_interactive) && dbs_tuners_ins.interaction_hack) {
-			mutex_lock(&this_dbs_info->timer_mutex);
-
-			/* Set up interaction vars */
-			this_dbs_info->hack_temp = 0;
-			this_dbs_info->last_load = 0;
-			this_dbs_info->is_interactive = 1;
-
-			/* Reset timers */
-			this_dbs_info->prev_cpu_idle =
-				get_cpu_idle_time(policy->cpu, &this_dbs_info->prev_cpu_wall);
-
-			/* Sample 5ms of load and start ramping as needed */
-			cancel_delayed_work_sync(&this_dbs_info->work);
-			schedule_delayed_work_on(this_dbs_info->cpu, &this_dbs_info->work,
-				msecs_to_jiffies(5));
-
-			mutex_unlock(&this_dbs_info->timer_mutex);
+		mutex_lock(&this_dbs_info->timer_mutex);
+		this_dbs_info->max_freq = max(this_dbs_info->max_freq, dbs_tuners_ins.interaction_hispeed);
+		if (!IGF(ENABLED)) {
+			ISF(ENABLED);
+			if (cancel_delayed_work_sync(&this_dbs_info->work)) {
+				this_dbs_info->prev_cpu_idle =
+					get_cpu_idle_time(policy->cpu, &this_dbs_info->prev_cpu_wall);
+				schedule_delayed_work_on(this_dbs_info->cpu, &this_dbs_info->work,
+					usecs_to_jiffies(dbs_tuners_ins.interaction_sampling_rate));
+			}
 		}
+		mutex_unlock(&this_dbs_info->timer_mutex);
 
 		break;
 
 	case CPUFREQ_GOV_NOINTERACT:
 		mutex_lock(&this_dbs_info->timer_mutex);
-		if (this_dbs_info->is_interactive) {
-			/* Allow dropping out of interaction */
-			this_dbs_info->is_interactive = 2;
+		if (IGF(PRESSED)) {
+			IUF(PRESSED);
 			this_dbs_info->defer_cycles = 0;
-			/* Collect stats */
 			this_dbs_info->deferred_return = 0;
 		}
 		mutex_unlock(&this_dbs_info->timer_mutex);
