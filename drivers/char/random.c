@@ -1186,6 +1186,7 @@ static inline void swap_byte(u8 *a, u8 *b) {
 //#define e(x) erandom_##x
 static int init_rand_state(void) {
 	unsigned int i, j, k;
+	unsigned long flags;
 	//unsigned int k;
 	u8 *S;
 	/* For some reason, using kmalloc/kfree for seed was causing panics if
@@ -1193,6 +1194,11 @@ static int init_rand_state(void) {
 	 */
 	u8 seed[256];
 
+	spin_lock_irqsave(&erandom_lock, flags);
+	if (erandom_seeded) goto out;
+
+	erandom_seeded = 1;
+	
 	get_random_bytes_arch(&seed, 256);
 
 	S = erandom_state.S;
@@ -1225,45 +1231,19 @@ static int init_rand_state(void) {
 	erandom_state.i = i;
 	erandom_state.j = j;
 
+out:
+	spin_unlock_irqrestore(&erandom_lock, flags);
 	return 0;
 }
 
-static void erandom_get_random_bytes(char *buf, size_t count) {
+/* erandom_lock should be held when calling! */
+static void _erandom_get_random_bytes(char *buf, size_t count) {
 	int k;
-	unsigned long v, flags;
+	unsigned long v;
 
 	unsigned int i;
 	unsigned int j;
 	u8 *S;
-
-	/*if (down_interruptible(&erandom_sem)) {
-		get_random_bytes_arch(buf, count);
-		return;
-	}*/
-
-	spin_lock_irqsave(&erandom_lock, flags);
-
-	/* FUCK. */
-	if (unlikely(!erandom_seeded)) {
-		if (!init_rand_state()) {
-			printk(KERN_INFO "frandom: Seeded global generator now (used by erandom)\n");
-			erandom_seeded = 1;
-		} else {
-			//up(&erandom_sem);
-			spin_unlock_irqrestore(&erandom_lock, flags);
-			printk(KERN_WARNING "frandom: unable to seed global generator!\n");
-			get_random_bytes_arch(buf, count);
-			return;
-		}
-	}
-	/*
-	if (!erandom_seeded) {
-		spin_unlock_irqrestore(&erandom_lock, flags);
-		printk(KERN_WARNING "erandom: getting bytes before seed.  wtf?\n");
-		get_random_bytes_arch(buf, count);
-		return;
-	}
-	*/
 
 	i = erandom_state.i;
 	j = erandom_state.j;
@@ -1281,7 +1261,8 @@ static void erandom_get_random_bytes(char *buf, size_t count) {
 	 * periods.  Since we don't need to decode later, we can swap bytes
 	 * periodically to stir the pool.
 	 */
-	if (erandom_seeded++ > 1024) {
+	erandom_seeded += count;
+	if (erandom_seeded > 0x8000) {
 		if (arch_get_random_long(&v)) {
 			erandom_seeded = 1;
 			for (; v; v >>= 16)
@@ -1291,72 +1272,57 @@ static void erandom_get_random_bytes(char *buf, size_t count) {
 
 	erandom_state.i = i;
 	erandom_state.j = j;
+}
 
-	//up(&erandom_sem);
+static void erandom_get_random_bytes(char *buf, size_t count) {
+	unsigned long flags;
+
+	if (unlikely(!erandom_seeded))
+		init_rand_state();
+
+	spin_lock_irqsave(&erandom_lock, flags);
+
+	_erandom_get_random_bytes(buf, count);
+
 	spin_unlock_irqrestore(&erandom_lock, flags);
 }
 
-//static ssize_t erandom_read(char *buf, size_t count) {
 static ssize_t
 erandom_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos) {
-	int k;
-	unsigned long v, flags;
-
-	unsigned int i;
-	unsigned int j;
-	u8 *S;
 	u8 tmp[16];
+	int m;
 	ssize_t ret = nbytes;
+	unsigned long flags;
 
-	spin_lock(&erandom_lock, flags);
+	if (unlikely(!erandom_seeded))
+		init_rand_state();
 
-	/* FUCK. */
-	if (unlikely(!erandom_seeded)) {
-		if (!init_rand_state()) {
-			printk(KERN_INFO "frandom: Seeded global generator now (used by erandom)\n");
-			erandom_seeded = 1;
-		} else {
-			//up(&erandom_sem);
-			spin_unlock(&erandom_lock, flags);
-			printk(KERN_WARNING "frandom: unable to seed global generator!\n");
-			get_random_bytes_arch(buf, nbytes);
-			return;
-		}
-	}
-
-	i = erandom_state.i;
-	j = erandom_state.j;
-	S = erandom_state.S;
+	spin_lock_irqsave(&erandom_lock, flags);
 
 	while (nbytes) {
-		for (k=0; k<min(nbytes, 16); k++) {
-			i = (i + 1) & 0xff;
-			j = (j + S[i]) & 0xff;
-			swap_byte(&S[i], &S[j]);
-			tmp[k] = S[(S[i] + S[j]) & 0xff];
+		m = min((int)nbytes, 16);
+		if (need_resched()) {
+			if (signal_pending(current)) {
+				if (ret == 0)
+					ret = -ERESTARTSYS;
+				break;
+			}
+			schedule();
 		}
-		if (copy_to_user(buf, tmp, min(nbytes, 16)))
-			return -EFAULT;
+
+		_erandom_get_random_bytes(tmp, m);
+		if (copy_to_user(buf, tmp, m)) {
+			ret = -EFAULT;
+			break;
+		}
+
+		nbytes -= m;
+		buf += m;
 	}
 
-	/* RC4 is known to be predictable and to occasionally have very short
-	 * periods.  Since we don't need to decode later, we can swap bytes
-	 * periodically to stir the pool.
-	 */
-	if (erandom_seeded++ > 1024) {
-		if (arch_get_random_long(&v)) {
-			erandom_seeded = 1;
-			for (; v; v >>= 16)
-				swap_byte(&S[v & 0xff], &S[(v >> 8) & 0xff]);
-		}
-	}
-
-	erandom_state.i = i;
-	erandom_state.j = j;
-
-	spin_unlock(&erandom_lock, flags);
+	spin_unlock_irqrestore(&erandom_lock, flags);
+	return ret;
 }
-
 //#undef e
 
 static ssize_t
@@ -1415,12 +1381,14 @@ random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 	return (count ? count : retval);
 }
 
+/*
 static ssize_t
 urandom_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 {
 	erandom_get_random_bytes(buf, nbytes);
 	return nbytes;
 }
+*/
 
 static unsigned int
 random_poll(struct file *file, poll_table * wait)
@@ -1535,7 +1503,7 @@ const struct file_operations random_fops = {
 };
 
 const struct file_operations urandom_fops = {
-	.read  = urandom_read,
+	.read  = erandom_read,
 	.write = random_write,
 	.unlocked_ioctl = random_ioctl,
 	.fasync = random_fasync,
