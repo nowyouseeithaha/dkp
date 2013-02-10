@@ -113,7 +113,7 @@ static struct dbs_tuners {
 	.hotplug_down_cycles = 3,
 	.hotplug_up_load = 3,
 	.hotplug_up_usage = 40,
-	.hotplug_down_usage = 15,
+	.hotplug_down_usage = 10,
 	.overestimate_khz = 75000,
 	.hispeed_thresh = 25000,
 	.hispeed_decrease = 25000,
