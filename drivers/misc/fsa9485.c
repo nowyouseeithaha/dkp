@@ -36,6 +36,8 @@
 #include <linux/mfd/pmic8058.h>
 #include <linux/input.h>
 #include <linux/sii9234.h>
+#include <linux/kobject.h>
+#include <linux/sysfs.h>
 
 /* FSA9480 I2C registers */
 #define FSA9485_REG_DEVID		0x01
@@ -135,6 +137,9 @@
 #define	ADC_JIG_UART_ON		0x1d
 #define	ADC_CARDOCK		0x1d
 #define	ADC_OPEN		0x1f
+
+/* (1 = enabled) | (2 = state_usb) | (4 = state_fast) */
+static int force_fast_charge;
 
 int uart_connecting;
 EXPORT_SYMBOL(uart_connecting);
@@ -649,8 +654,14 @@ static int fsa9485_detect_dev(struct fsa9485_usbsw *usbsw)
 		if (val1 & DEV_USB || val2 & DEV_T2_USB_MASK) {
 			dev_info(&client->dev, "usb connect\n");
 
-			if (pdata->usb_cb)
+			if ((force_fast_charge & 1) && pdata->charger_cb) {
+				force_fast_charge |= 4;
+				pdata->charger_cb(FSA9485_ATTACHED);
+			} else if (pdata->usb_cb) {
+				force_fast_charge |= 2;
 				pdata->usb_cb(FSA9485_ATTACHED);
+			}
+
 			if (usbsw->mansw) {
 				ret = i2c_smbus_write_byte_data(client,
 				FSA9485_REG_MANSW1, usbsw->mansw);
@@ -824,8 +835,17 @@ static int fsa9485_detect_dev(struct fsa9485_usbsw *usbsw)
 		/* USB */
 		if (usbsw->dev1 & DEV_USB ||
 				usbsw->dev2 & DEV_T2_USB_MASK) {
-			if (pdata->usb_cb)
+			if ((force_fast_charge & 4) && pdata->charger_cb) {
+				force_fast_charge &= 1;
+				pdata->charger_cb(FSA9485_DETACHED);
+			} else if ((force_fast_charge & 2) && pdata->usb_cb) {
+				force_fast_charge &= 1;
 				pdata->usb_cb(FSA9485_DETACHED);
+			} else
+				/* Something external has changed our state and
+				 * we don't know what to do.  BUG time!
+				 */
+				BUG();
 		} else if (usbsw->dev1 & DEV_USB_CHG) {
 			if (pdata->usb_cdp_cb)
 				pdata->usb_cdp_cb(FSA9485_DETACHED);
@@ -1351,6 +1371,49 @@ static int fsa9485_resume(struct i2c_client *client)
 	return 0;
 }
 
+/* This is kind of hacky, but most of this code already abuses local_usbsw. */
+static inline void ffc_migrate(void) {
+	struct fsa9485_platform_data *pdata;
+	if (!local_usbsw || !local_usbsw->pdata) return;
+	pdata = local_usbsw->pdata;
+	if (pdata->usb_cb && pdata->charger_cb) {
+		if (force_fast_charge == 3) {
+			/* enabled | state_usb */
+			pdata->usb_cb(FSA9485_DETACHED);
+			pdata->charger_cb(FSA9485_ATTACHED);
+			force_fast_charge = 5;
+		} else if (force_fast_charge == 4) {
+			/* disabled | state_fast */
+			pdata->usb_cb(FSA9485_DETACHED);
+			pdata->charger_cb(FSA9485_ATTACHED);
+			force_fast_charge = 2;
+		}
+	}
+}
+
+static ssize_t ffc_show(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf) {
+	return sprintf(buf, "%u\n", force_fast_charge & 1);
+}
+
+static ssize_t ffc_store(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf, size_t count) {
+	int tmp;
+	if (sscanf(buf, "%u", &tmp)) {
+		if (!(tmp & ~1)) {
+			force_fast_charge = (force_fast_charge & 6) | tmp;
+			ffc_migrate();
+			return count;
+		}
+	}
+	return -EINVAL;
+}
+
+static struct kobj_attribute ffc_attr =
+	__ATTR(force_fast_charge, 0666, ffc_show, ffc_store);
+static struct attribute *attrs[] = { &ffc_attr.attr, NULL };
+static struct attribute_group attr_group = { .attrs = attrs };
+static struct kobject *ffc_kobj;
 
 static const struct i2c_device_id fsa9485_id[] = {
 	{"fsa9485", 0},
@@ -1370,12 +1433,22 @@ static struct i2c_driver fsa9485_i2c_driver = {
 
 static int __init fsa9485_init(void)
 {
+	ffc_kobj = kobject_create_and_add("fast_charge", kernel_kobj);
+	if (ffc_kobj) {
+		if (sysfs_create_group(ffc_kobj, &attr_group)) {
+			kobject_put(ffc_kobj);
+		}
+	}
+
 	return i2c_add_driver(&fsa9485_i2c_driver);
 }
 module_init(fsa9485_init);
 
 static void __exit fsa9485_exit(void)
 {
+	if (ffc_kobj)
+		kobject_put(ffc_kobj);
+
 	i2c_del_driver(&fsa9485_i2c_driver);
 }
 module_exit(fsa9485_exit);
