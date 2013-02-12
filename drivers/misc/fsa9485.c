@@ -660,15 +660,14 @@ static int fsa9485_detect_dev(struct fsa9485_usbsw *usbsw)
 			} else if (pdata->usb_cb) {
 				force_fast_charge |= 2;
 				pdata->usb_cb(FSA9485_ATTACHED);
-			}
+				if (usbsw->mansw) {
+					ret = i2c_smbus_write_byte_data(client,
+					FSA9485_REG_MANSW1, usbsw->mansw);
 
-			if (usbsw->mansw) {
-				ret = i2c_smbus_write_byte_data(client,
-				FSA9485_REG_MANSW1, usbsw->mansw);
-
-				if (ret < 0)
-					dev_err(&client->dev,
-						"%s: err %d\n", __func__, ret);
+					if (ret < 0)
+						dev_err(&client->dev,
+							"%s: err %d\n", __func__, ret);
+				}
 			}
 		/* USB_CDP */
 		} else if (val1 & DEV_USB_CHG) {
@@ -836,16 +835,15 @@ static int fsa9485_detect_dev(struct fsa9485_usbsw *usbsw)
 		if (usbsw->dev1 & DEV_USB ||
 				usbsw->dev2 & DEV_T2_USB_MASK) {
 			if ((force_fast_charge & 4) && pdata->charger_cb) {
-				force_fast_charge &= 1;
 				pdata->charger_cb(FSA9485_DETACHED);
 			} else if ((force_fast_charge & 2) && pdata->usb_cb) {
-				force_fast_charge &= 1;
 				pdata->usb_cb(FSA9485_DETACHED);
 			} else
 				/* Something external has changed our state and
 				 * we don't know what to do.  BUG time!
 				 */
 				BUG();
+			force_fast_charge &= 1;
 		} else if (usbsw->dev1 & DEV_USB_CHG) {
 			if (pdata->usb_cdp_cb)
 				pdata->usb_cdp_cb(FSA9485_DETACHED);
@@ -1383,9 +1381,9 @@ static inline void ffc_migrate(void) {
 			pdata->charger_cb(FSA9485_ATTACHED);
 			force_fast_charge = 5;
 		} else if (force_fast_charge == 4) {
-			/* disabled | state_fast */
-			pdata->usb_cb(FSA9485_DETACHED);
-			pdata->charger_cb(FSA9485_ATTACHED);
+			/* !enabled | state_fast */
+			pdata->charger_cb(FSA9485_DETACHED);
+			pdata->usb_cb(FSA9485_ATTACHED);
 			force_fast_charge = 2;
 		}
 	}
@@ -1411,9 +1409,11 @@ static ssize_t ffc_store(struct kobject *kobj,
 
 static struct kobj_attribute ffc_attr =
 	__ATTR(force_fast_charge, 0666, ffc_show, ffc_store);
-static struct attribute *attrs[] = { &ffc_attr.attr, NULL };
-static struct attribute_group attr_group = { .attrs = attrs };
-static struct kobject *ffc_kobj;
+static struct attribute *ffc_attrs[] = { &ffc_attr.attr, NULL };
+static struct attribute_group ffc_attr_group = {
+	.attrs = ffc_attrs,
+	.name = "fast_charge"
+};
 
 static const struct i2c_device_id fsa9485_id[] = {
 	{"fsa9485", 0},
@@ -1433,22 +1433,14 @@ static struct i2c_driver fsa9485_i2c_driver = {
 
 static int __init fsa9485_init(void)
 {
-	ffc_kobj = kobject_create_and_add("fast_charge", kernel_kobj);
-	if (ffc_kobj) {
-		if (sysfs_create_group(ffc_kobj, &attr_group)) {
-			kobject_put(ffc_kobj);
-		}
-	}
-
+	if (sysfs_create_group(kernel_kobj, &ffc_attr_group))
+		pr_err("Unable to create fast_charge group!\n");
 	return i2c_add_driver(&fsa9485_i2c_driver);
 }
 module_init(fsa9485_init);
 
 static void __exit fsa9485_exit(void)
 {
-	if (ffc_kobj)
-		kobject_put(ffc_kobj);
-
 	i2c_del_driver(&fsa9485_i2c_driver);
 }
 module_exit(fsa9485_exit);
