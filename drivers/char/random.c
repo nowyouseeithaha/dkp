@@ -324,7 +324,8 @@ static int random_depletions = 0;
 static void init_rand_state(void);
 static void erandom_get_random_bytes(char *buf, size_t count);
 static DEFINE_SPINLOCK(erandom_lock);
-static unsigned int erandom_seeded = 0;
+static unsigned int erandom_bytes_read = 0;
+static int erandom_stir_thresh = 4096;
 static u8 erandom_S[256];
 static u8 erandom_i;
 static u8 erandom_j;
@@ -1216,10 +1217,10 @@ static void _erandom_get_random_bytes(char *buf, size_t count) {
 	 * periods.  Since we don't need to decode later, we can swap bytes
 	 * periodically to stir the pool.
 	 */
-	erandom_seeded += count;
-	if (erandom_seeded > 0x1000) {
+	erandom_bytes_read += count;
+	if (erandom_stir_thresh > 0 && erandom_bytes_read > erandom_stir_thresh) {
 		if (arch_get_random_long(&v)) {
-			erandom_seeded = 1;
+			erandom_bytes_read = 0;
 			for (; v; v >>= 16)
 				swap_byte(&erandom_S[v & 0xff], &erandom_S[(v >> 8) & 0xff]);
 		}
@@ -1568,6 +1569,13 @@ ctl_table random_table[] = {
 		.data		= &random_depletions,
 		.maxlen		= sizeof(int),
 		.mode		= 0444,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "erandom_stir_thresh",
+		.data		= &erandom_stir_thresh,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	},
 	{ }
