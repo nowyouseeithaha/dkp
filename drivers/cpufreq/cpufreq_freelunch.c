@@ -12,15 +12,6 @@
  * published by the Free Software Foundation.
  */
 
-/* Current (Known) Issues:
- * - Interactive mode defers forever in lockscreen.  Seems unfixable without
- *   causing other issues, and I don't care anyway.  Don't leave your
- *   lockscreen on.  Problem solved.
- * - Recents and home animations are sometimes choppy.  Seems unfixable, and
- *   even Interactive has issues with them (though to a lesser extent).
- * - XDA app scrolling sucks.  Complain to Tapatalk, not me.
- */
-
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -112,14 +103,14 @@ static struct dbs_tuners {
 	.hotplug_up_cycles = 3,
 	.hotplug_down_cycles = 3,
 	.hotplug_up_load = 3,
-	.hotplug_up_usage = 40,
-	.hotplug_down_usage = 10,
+	.hotplug_up_usage = 600000,
+	.hotplug_down_usage = 225000,
 	.overestimate_khz = 75000,
 	.hispeed_thresh = 25000,
 	.hispeed_decrease = 25000,
 	.interaction_sampling_rate = 10000,
 	.interaction_overestimate_khz = 175000,
-	.interaction_return_usage = 5, /* crazy low, but XDA sucks otherwise */
+	.interaction_return_usage = 75000, /* crazy low, but XDA sucks otherwise */
 	.interaction_return_cycles = 4, /* 3 vsyncs */
 	.interaction_hispeed = 1188000,
 };
@@ -223,17 +214,17 @@ define_one_global_rw(f);
 
 show_one(sampling_rate, sampling_rate);
 show_one(ignore_nice_load, ignore_nice);
-i_am_lazy(hotplug_up_cycles, 0, 10)
-i_am_lazy(hotplug_down_cycles, 0, 10)
-i_am_lazy(hotplug_up_load, 0, 10)
-i_am_lazy(hotplug_up_usage, 0, 100)
-i_am_lazy(hotplug_down_usage, 0, 100)
-i_am_lazy(overestimate_khz, 0, 500000)
-i_am_lazy(hispeed_thresh, 0, 500000)
+i_am_lazy(hotplug_up_cycles, 0, 100)
+i_am_lazy(hotplug_down_cycles, 0, 100)
+i_am_lazy(hotplug_up_load, 0, 100)
+i_am_lazy(hotplug_up_usage, 0, 4000000)
+i_am_lazy(hotplug_down_usage, 0, 4000000)
+i_am_lazy(overestimate_khz, 0, 4000000)
+i_am_lazy(hispeed_thresh, 0, 4000000)
 i_am_lazy(hispeed_decrease, 0, 4000000)
 i_am_lazy(interaction_sampling_rate, 10000, 1000000)
-i_am_lazy(interaction_overestimate_khz, 0, 500000)
-i_am_lazy(interaction_return_usage, 0, 100)
+i_am_lazy(interaction_overestimate_khz, 0, 4000000)
+i_am_lazy(interaction_return_usage, 0, 4000000)
 i_am_lazy(interaction_return_cycles, 0, 100)
 i_am_lazy(interaction_hispeed, 0, 4000000)
 
@@ -380,11 +371,11 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		// RAWR!
 		if (nr_running() >= dbs_tuners_ins.hotplug_up_load) {
 			if ((this_dbs_info->hotplug_cycle++ >= dbs_tuners_ins.hotplug_up_cycles) &&
-				load > policy->max * dbs_tuners_ins.hotplug_up_usage / 100) {
+				load > dbs_tuners_ins.hotplug_up_usage) {
 #else
 		// meow.
 		if (nr_running() >= dbs_tuners_ins.hotplug_up_load &&
-			load > policy->max * dbs_tuners_ins.hotplug_up_usage / 100) {
+			load > dbs_tuners_ins.hotplug_up_usage) {
 			if (this_dbs_info->hotplug_cycle++ >= dbs_tuners_ins.hotplug_up_cycles) {
 #endif
 				schedule_work_on(0, &cpu_up_work);
@@ -392,7 +383,10 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			}
 		} else this_dbs_info->hotplug_cycle = 0;
 	} else {
-		if (load < policy->max * dbs_tuners_ins.hotplug_down_usage / 100) {
+		/* TODO: verify other core isn't loaded enough that we'll immediately
+		 * bring core 2 back up?
+		 */
+		if (load < dbs_tuners_ins.hotplug_down_usage) {
 			if (this_dbs_info->hotplug_cycle++ >= dbs_tuners_ins.hotplug_down_cycles) {
 				schedule_work_on(0, &cpu_down_work);
 				this_dbs_info->hotplug_cycle = 0;
@@ -404,7 +398,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	if (IGF(ENABLED)) {
 		if (!IGF(PRESSED)) {
 			this_dbs_info->deferred_return++;
-			if (load < policy->max * dbs_tuners_ins.interaction_return_usage / 100) {
+			if (load < dbs_tuners_ins.interaction_return_usage) {
 				if (this_dbs_info->defer_cycles++ >= dbs_tuners_ins.interaction_return_cycles) {
 					IUF(ENABLED);
 					printk(KERN_DEBUG "freelunch: deferred noninteractive %u cycles.\n",
@@ -534,6 +528,8 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		}
 		this_dbs_info->requested_freq = policy->cur;
 		this_dbs_info->hotplug_cycle = 0;
+		this_dbs_info->defer_cycles = 0;
+		this_dbs_info->deferred_return = 0;
 		/* Dirty hack */
 		if (cpu > 0)
 			this_dbs_info->is_interactive = per_cpu(cs_cpu_dbs_info, 0).is_interactive;
