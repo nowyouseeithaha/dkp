@@ -1179,12 +1179,6 @@ static void init_rand_state(void) {
 	for (k=0; k<256; k++)
 		erandom_S[k] = k;
 
-	/* Compiler error ahoy!
-	for (erandom_i = 0, erandom_j = 0; erandom_i < 256; erandom_i++) {
-		erandom_j = (erandom_j + erandom_S[erandom_i] + seed[erandom_i]) & 0xff;
-		swap_byte(&erandom_S[erandom_i], &erandom_S[erandom_j]);
-	}
-	*/
 	for (k = 0, erandom_j = 0; k < 256; k++) {
 		erandom_j = (erandom_j + erandom_S[k] + seed[k]) & 0xff;
 		swap_byte(&erandom_S[k], &erandom_S[erandom_j]);

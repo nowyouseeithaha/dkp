@@ -97,7 +97,6 @@ static struct dbs_tuners {
 
 	unsigned int interaction_hispeed;
 } dbs_tuners_ins = {
-	/* Pretty reasonable defaults */
 	.sampling_rate = 35000, /* 2 vsyncs */
 	.ignore_nice = 0,
 	.hotplug_up_cycles = 3,
@@ -356,8 +355,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* Apparently, this happens. */
 	if (unlikely(idle_time > wall_time)) return;
 
-	/* Not needed, but why not? */
-	if (wall_time > 1000) {
+	/* KHz/us is not a good idea.  Increase precision a bit. */
+	while (wall_time > 2000) {
 		wall_time /= 10;
 		idle_time /= 10;
 	}
@@ -429,7 +428,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* Set frequency */
 	this_dbs_info->requested_freq += load + dbs_tuners_ins.hispeed_thresh > policy->cur ?
 		this_dbs_info->max_freq : load + overestimate;
-#if 1
 	/* Bound request just outside available range
 	 * Ideally, this helps stabilize idle @ min, load @ max
 	 */
@@ -443,14 +441,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	} else {
 		this_dbs_info->requested_freq = fml;
 	}
-#else
-	/* Bound freq to 0..max+oe*2
-	 * This will be horrible for performance, but not bad for battery
-	 */
-	this_dbs_info->requested_freq -= min(this_dbs_info->requested_freq, policy->cur);
-	if (this_dbs_info->requseted_freq > policy->max + overestimate * 2)
-		this_dbs_info->requseted_freq = policy->max + overestimate * 2;
-#endif
 
 	__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
 		CPUFREQ_RELATION_H);
