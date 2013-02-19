@@ -35,6 +35,7 @@
 
 #include <linux/pci.h>
 #include <linux/completion.h>
+#include <linux/platform_device.h>
 
 #include <osl.h>
 #include <pcicfg.h>

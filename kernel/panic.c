@@ -89,7 +89,7 @@ NORET_TYPE void panic(const char * fmt, ...)
 	 * preempt to be disabled. No point enabling it later though...
 	 */
 	preempt_disable();
-	secdbg_sched_msg("!!panic!!");
+	//secdbg_sched_msg("!!panic!!");
 	console_verbose();
 	bust_spinlocks(1);
 	va_start(args, fmt);
