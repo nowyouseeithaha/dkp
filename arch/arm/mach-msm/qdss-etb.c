@@ -127,16 +127,20 @@ void __etb_disable(void)
 	for (count = TIMEOUT_US; BVAL(etb_readl(etb, ETB_FFCR), 6) != 0
 				&& count > 0; count--)
 		udelay(1);
-	WARN(count == 0, "timeout while flushing ETB, ETB_FFCR: %#x\n",
-	     etb_readl(etb, ETB_FFCR));
+	if (unlikely(!count))
+		printk(KERN_ERR "%s: timeout while flushing ETB\n", __func__);
+	//WARN(count == 0, "timeout while flushing ETB, ETB_FFCR: %#x\n",
+	     //etb_readl(etb, ETB_FFCR));
 
 	etb_writel(etb, 0x0, ETB_CTL_REG);
 
 	for (count = TIMEOUT_US; BVAL(etb_readl(etb, ETB_FFSR), 1) != 1
 				&& count > 0; count--)
 		udelay(1);
-	WARN(count == 0, "timeout while disabling ETB, ETB_FFSR: %#x\n",
-	     etb_readl(etb, ETB_FFSR));
+	if (unlikely(!count))
+		printk(KERN_ERR "%s: timeout while flushing ETB\n", __func__);
+	//WARN(count == 0, "timeout while disabling ETB, ETB_FFSR: %#x\n",
+	     //etb_readl(etb, ETB_FFSR));
 
 	ETB_LOCK();
 }
