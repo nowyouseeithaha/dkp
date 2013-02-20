@@ -117,7 +117,9 @@ static struct adreno_device device_3d0 = {
  * kernel log.
  */
 unsigned int hang_detect_regs[] = {
+#if __adreno_is_a3xx
 	A3XX_RBBM_STATUS,
+#endif
 	REG_CP_RB_RPTR,
 	REG_CP_IB1_BASE,
 	REG_CP_IB1_BUFSZ,
@@ -145,6 +147,7 @@ static const struct {
 	unsigned int instruction_size; /* Size of an instruction in dwords */
 	unsigned int gmem_size; /* size of gmem for gpu*/
 } adreno_gpulist[] = {
+#if __adreno_is_a20x
 	{ ADRENO_REV_A200, 0, 2, ANY_ID, ANY_ID,
 		"yamato_pm4.fw", "yamato_pfp.fw", &adreno_a2xx_gpudev,
 		512, 384, 3, SZ_256K },
@@ -154,9 +157,13 @@ static const struct {
 	{ ADRENO_REV_A205, 0, 1, 0, ANY_ID,
 		"yamato_pm4.fw", "yamato_pfp.fw", &adreno_a2xx_gpudev,
 		512, 384, 3, SZ_256K },
+#endif
+#if __adreno_is_a220
 	{ ADRENO_REV_A220, 2, 1, ANY_ID, ANY_ID,
 		"leia_pm4_470.fw", "leia_pfp_470.fw", &adreno_a2xx_gpudev,
 		512, 384, 3, SZ_512K },
+#endif
+#if __adreno_is_a225
 	/*
 	 * patchlevel 5 (8960v2) needs special pm4 firmware to work around
 	 * a hardware problem.
@@ -170,6 +177,8 @@ static const struct {
 	{ ADRENO_REV_A225, 2, 2, ANY_ID, ANY_ID,
 		"a225_pm4.fw", "a225_pfp.fw", &adreno_a2xx_gpudev,
 		1536, 768, 3, SZ_512K },
+#endif
+#if __adreno_is_a3xx
 	/* A3XX doesn't use the pix_shader_start */
 	{ ADRENO_REV_A305, 3, 0, 5, ANY_ID,
 		"a300_pm4.fw", "a300_pfp.fw", &adreno_a3xx_gpudev,
@@ -178,6 +187,7 @@ static const struct {
 	{ ADRENO_REV_A320, 3, 2, 0, ANY_ID,
 		"a300_pm4.fw", "a300_pfp.fw", &adreno_a3xx_gpudev,
 		512, 0, 2, SZ_512K },
+#endif
 
 };
 
@@ -512,7 +522,6 @@ static void adreno_gpummu_setstate(struct kgsl_device *device,
 			sizedwords += 21;
 		}
 
-
 		if (flags & (KGSL_MMUFLAGS_PTUPDATE | KGSL_MMUFLAGS_TLBFLUSH)) {
 			*cmds++ = cp_type3_packet(CP_INVALIDATE_STATE, 1);
 			*cmds++ = 0x7fff; /* invalidate all base pointers */
@@ -538,6 +547,7 @@ static void adreno_setstate(struct kgsl_device *device,
 		return adreno_iommu_setstate(device, context_id, flags);
 }
 
+#if __adreno_is_a3xx
 static unsigned int
 a3xx_getchipid(struct kgsl_device *device)
 {
@@ -589,7 +599,8 @@ a3xx_getchipid(struct kgsl_device *device)
 
 	return (0x03 << 24) | (majorid << 16) | (minorid << 8) | patchid;
 }
-
+#endif
+#if __adreno_is_a2xx
 static unsigned int
 a2xx_getchipid(struct kgsl_device *device)
 {
@@ -629,15 +640,24 @@ a2xx_getchipid(struct kgsl_device *device)
 
 	return chipid;
 }
+#endif
 
 static unsigned int
 adreno_getchipid(struct kgsl_device *device)
 {
+#if CONFIG_AXXX_REV
+#if __adreno_is_a3xx
+	return a3xx_getchipid(device);
+#else
+	return a2xx_getchipid(device);
+#endif
+#else
 	if (cpu_is_apq8064() || cpu_is_msm8930() || 
 	    cpu_is_msm8627())
 		return a3xx_getchipid(device);
 	else
 		return a2xx_getchipid(device);
+#endif
 }
 
 static inline bool _rev_match(unsigned int id, unsigned int entry)

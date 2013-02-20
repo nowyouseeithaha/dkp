@@ -11,6 +11,8 @@
  *
  */
 
+#include "adreno.h"
+#if __adreno_is_a3xx
 #ifndef _A300_REG_H
 #define _A300_REG_H
 
@@ -520,4 +522,5 @@
 /* RBBM_CLOCK_CTL default value */
 #define A3XX_RBBM_CLOCK_CTL_DEFAULT 0xBFFFFFFF
 
+#endif
 #endif
