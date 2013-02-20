@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  */
 
-#define DEBUG
+//#define DEBUG
 
 #include <linux/fs.h>
 #include <linux/device.h>

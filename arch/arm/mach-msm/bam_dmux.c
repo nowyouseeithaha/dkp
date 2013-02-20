@@ -15,7 +15,9 @@
  *  BAM DMUX module.
  */
 
-#define DEBUG
+//#define DEBUG
+//#define BOGUS
+#undef CONFIG_DEBUG_FS
 
 #include <linux/delay.h>
 #include <linux/module.h>
@@ -134,8 +136,10 @@ struct tx_pkt_info {
 	uint32_t len;
 	struct work_struct work;
 	struct list_head list_node;
+#ifdef BOGUS
 	unsigned ts_sec;
 	unsigned long ts_nsec;
+#endif
 };
 
 struct rx_pkt_info {
@@ -270,6 +274,7 @@ static int bam_dmux_uplink_vote;
 static int bam_dmux_power_state;
 
 
+#ifdef BOGUS
 #define DMUX_LOG_KERR(fmt...) \
 do { \
 	bam_dmux_log(fmt); \
@@ -394,6 +399,12 @@ static inline void verify_tx_queue_is_empty(const char *func)
 	}
 	spin_unlock_irqrestore(&bam_tx_pool_spinlock, flags);
 }
+#else
+#define DMUX_LOG_KERR(fmt, ...)
+#define bam_dmux_log(fmt, ...)
+#define set_tx_timestamp(pkt)
+#define verify_tx_queue_is_empty(func)
+#endif
 
 static void queue_rx(void)
 {
@@ -709,6 +720,7 @@ static void bam_mux_write_done(struct work_struct *work)
 	info_expected = list_first_entry(&bam_tx_pool,
 			struct tx_pkt_info, list_node);
 	if (unlikely(info != info_expected)) {
+#ifdef BOGUS
 		struct tx_pkt_info *errant_pkt;
 
 		DMUX_LOG_KERR("%s: bam_tx_pool mismatch .next=%p,"
@@ -723,6 +735,7 @@ static void bam_mux_write_done(struct work_struct *work)
 			errant_pkt->ts_nsec);
 
 		}
+#endif
 		spin_unlock_irqrestore(&bam_tx_pool_spinlock, flags);
 		BUG();
 	}

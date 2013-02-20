@@ -15,6 +15,8 @@
  *                       interface.
  */
 
+//#define DEBUG
+
 #include <linux/slab.h>
 #include <linux/cdev.h>
 #include <linux/module.h>
@@ -88,7 +90,6 @@ static uint32_t is_modem_smsm_inited(void);
 static int msm_smd_pkt_debug_mask;
 module_param_named(debug_mask, msm_smd_pkt_debug_mask,
 		int, S_IRUGO | S_IWUSR | S_IWGRP);
-#define DEBUG
 
 #ifdef DEBUG
 #define D_DUMP_BUFFER(prestr, cnt, buf) \

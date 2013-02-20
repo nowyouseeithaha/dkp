@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  */
 
-#define DEBUG
+//#define DEBUG
 
 #include <linux/slab.h>
 #include <linux/module.h>
@@ -50,9 +50,8 @@ static int msm_ipc_router_debug_mask;
 module_param_named(debug_mask, msm_ipc_router_debug_mask,
 		   int, S_IRUGO | S_IWUSR | S_IWGRP);
 
-#define DIAG(x...) pr_info("[RR] ERROR " x)
-
 #if defined(DEBUG)
+#define DIAG(x...) pr_info("[RR] ERROR " x)
 #define D(x...) do { \
 if (msm_ipc_router_debug_mask & RTR_DBG) \
 	pr_info(x); \
@@ -78,11 +77,12 @@ if (msm_ipc_router_debug_mask & R2R_RAW_HDR) \
 	pr_info("[HDR] "x); \
 } while (0)
 #else
-#define D(x...) do { } while (0)
-#define RR(x...) do { } while (0)
-#define RAW(x...) do { } while (0)
-#define RAW_HDR(x...) do { } while (0)
-#define NTFY(x...) do { } while (0)
+#define DIAG(x...)
+#define D(x...)
+#define RR(x...)
+#define RAW(x...)
+#define RAW_HDR(x...)
+#define NTFY(x...)
 #endif
 
 #define IPC_ROUTER_LOG_EVENT_ERROR      0x10

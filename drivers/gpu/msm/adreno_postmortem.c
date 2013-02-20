@@ -16,6 +16,8 @@
 #include "kgsl.h"
 #include "kgsl_sharedmem.h"
 
+#ifdef CONFIG_DEBUG_FS
+
 #include "adreno.h"
 #include "adreno_pm4types.h"
 #include "adreno_ringbuffer.h"
@@ -967,3 +969,8 @@ int adreno_postmortem_dump(struct kgsl_device *device, int manual)
 
 	return 0;
 }
+#else
+int adreno_postmortem_dump(struct kgsl_device *device, int manual) {
+	return 0;
+}
+#endif

@@ -4510,18 +4510,18 @@ static DEFINE_CLK_VOTER(ebi1_msmbus_clk, &ebi1_clk.c);
  */
 static DEFINE_CLK_VOTER(ebi1_adm_clk,    &dummy_clk);
 
-#ifdef CONFIG_DEBUG_FS
-struct measure_sel {
-	u32 test_vector;
-	struct clk *clk;
-};
-
 static DEFINE_CLK_MEASURE(l2_m_clk);
 static DEFINE_CLK_MEASURE(krait0_m_clk);
 static DEFINE_CLK_MEASURE(krait1_m_clk);
 static DEFINE_CLK_MEASURE(q6sw_clk);
 static DEFINE_CLK_MEASURE(q6fw_clk);
 static DEFINE_CLK_MEASURE(q6_func_clk);
+
+#ifdef CONFIG_DEBUG_FS
+struct measure_sel {
+	u32 test_vector;
+	struct clk *clk;
+};
 
 static struct measure_sel measure_mux[] = {
 	{ TEST_PER_LS(0x08), &slimbus_xo_src_clk.c },

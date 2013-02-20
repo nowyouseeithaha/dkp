@@ -413,6 +413,10 @@ done:
 		kfree(reg_map_array);
 }
 
+#ifndef CONFIG_DEBUG_FS
+#define kgsl_cff_dump_enable (0)
+#endif
+
 static void adreno_gpummu_setstate(struct kgsl_device *device,
 					unsigned int context_id,
 					uint32_t flags)
