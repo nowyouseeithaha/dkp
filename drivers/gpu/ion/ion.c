@@ -1005,6 +1005,7 @@ end:
 }
 EXPORT_SYMBOL(ion_import_fd);
 
+#ifdef CONFIG_DEBUG_FS
 static int ion_debug_client_show(struct seq_file *s, void *unused)
 {
 	struct ion_client *client = s->private;
@@ -1064,6 +1065,7 @@ static const struct file_operations debug_client_fops = {
 	.llseek = seq_lseek,
 	.release = single_release,
 };
+#endif
 
 static struct ion_client *ion_client_lookup(struct ion_device *dev,
 					    struct task_struct *task)
@@ -1183,9 +1185,11 @@ struct ion_client *ion_client_create(struct ion_device *dev,
 	}
 
 
+#ifdef CONFIG_DEBUG_FS
 	client->debug_root = debugfs_create_file(name, 0664,
 						 dev->debug_root, client,
 						 &debug_client_fops);
+#endif
 	mutex_unlock(&dev->lock);
 
 	return client;
@@ -1210,7 +1214,9 @@ static void _ion_client_destroy(struct kref *kref)
 	} else {
 		rb_erase(&client->node, &dev->kernel_clients);
 	}
+#ifdef CONFIG_DEBUG_FS
 	debugfs_remove_recursive(client->debug_root);
+#endif
 	mutex_unlock(&dev->lock);
 
 	kfree(client->name);
