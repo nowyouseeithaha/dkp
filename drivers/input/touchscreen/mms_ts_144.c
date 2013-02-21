@@ -14,10 +14,10 @@
  *
  */
 
-#define DEBUG
+//#define DEBUG
 /* #define VERBOSE_DEBUG */
 /* #define SEC_TSP_DEBUG */
-#define SEC_TSP_VERBOSE_DEBUG
+//#define SEC_TSP_VERBOSE_DEBUG
 
 /* #define FORCE_FW_FLASH */
 /* #define FORCE_FW_PASS */
@@ -308,9 +308,7 @@ struct mms_ts_info {
 	bool			ta_status;
 	bool			noise_mode;
 
-#if defined(SEC_TSP_DEBUG) || defined(SEC_TSP_VERBOSE_DEBUG)
 	unsigned char finger_state[MAX_FINGERS];
-#endif
 
 #if defined(SEC_TSP_FW_UPDATE)
 	u8				fw_update_state;
@@ -683,9 +681,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 			input_mt_report_slot_state(info->input_dev,
 						   MT_TOOL_FINGER, false);
 
-#if defined(SEC_TSP_DEBUG) || defined(SEC_TSP_VERBOSE_DEBUG)
 			info->finger_state[id] = 0;
-#endif
 			continue;
 		}
 
@@ -715,9 +711,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 				, angle, palm);
 		}
 #else
-		if (info->finger_state[id] == 0) {
-			info->finger_state[id] = 1;
-		}
+		info->finger_state[id] = 1;
 #endif
 	}
 

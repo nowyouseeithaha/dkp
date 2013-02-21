@@ -33,7 +33,7 @@
 
 #include <mach/iommu_domains.h>
 #include "ion_priv.h"
-#define DEBUG
+//#define DEBUG
 
 /**
  * struct ion_device - the metadata of the ion device node

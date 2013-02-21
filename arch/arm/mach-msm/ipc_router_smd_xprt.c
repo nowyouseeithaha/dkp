@@ -13,7 +13,7 @@
 /*
  * IPC ROUTER SMD XPRT module.
  */
-#define DEBUG
+//#define DEBUG
 
 #include <linux/platform_device.h>
 #include <linux/types.h>

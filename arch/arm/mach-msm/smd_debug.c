@@ -15,8 +15,6 @@
  *
  */
 
-#undef CONFIG_DEBUG_FS
-
 #include <linux/debugfs.h>
 #include <linux/list.h>
 #include <linux/ctype.h>

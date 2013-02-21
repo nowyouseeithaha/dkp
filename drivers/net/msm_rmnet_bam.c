@@ -15,6 +15,8 @@
  * RMNET BAM Module.
  */
 
+//#define DEBUG
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
@@ -36,10 +38,14 @@
 
 #include <mach/bam_dmux.h>
 
+#ifdef DEBUG
 /* Debug message support */
 static int msm_rmnet_bam_debug_mask;
 module_param_named(debug_enable, msm_rmnet_bam_debug_mask,
 			int, S_IRUGO | S_IWUSR | S_IWGRP);
+#else
+#define msm_rmnet_bam_debug_mask (0)
+#endif
 
 #define DEBUG_MASK_LVL0 (1U << 0)
 #define DEBUG_MASK_LVL1 (1U << 1)

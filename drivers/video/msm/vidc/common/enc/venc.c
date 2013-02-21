@@ -38,11 +38,12 @@
 
 #if DEBUG
 #define DBG(x...) printk(KERN_DEBUG x)
+#define INFO(x...) printk(KERN_INFO x)
 #else
 #define DBG(x...)
+#define INFO(x...)
 #endif
 
-#define INFO(x...) printk(KERN_INFO x)
 #define ERR(x...) printk(KERN_ERR x)
 
 static struct vid_enc_dev *vid_enc_device_p;

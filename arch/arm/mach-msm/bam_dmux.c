@@ -17,7 +17,6 @@
 
 //#define DEBUG
 //#define BOGUS
-#undef CONFIG_DEBUG_FS
 
 #include <linux/delay.h>
 #include <linux/module.h>
@@ -269,7 +268,9 @@ static int in_global_reset;
 #define LOG_MESSAGE_MAX_SIZE 80
 struct kfifo bam_dmux_state_log;
 static uint32_t bam_dmux_state_logging_disabled;
+#ifdef BOGUS
 static DEFINE_SPINLOCK(bam_dmux_logging_spinlock);
+#endif
 static int bam_dmux_uplink_vote;
 static int bam_dmux_power_state;
 
