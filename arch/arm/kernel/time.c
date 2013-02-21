@@ -63,11 +63,13 @@ unsigned long profile_pc(struct pt_regs *regs)
 	frame.sp = regs->ARM_sp;
 	frame.lr = regs->ARM_lr;
 	frame.pc = regs->ARM_pc;
+#if defined(CONFIG_ARM_UNWIND) || defined(CONFIG_FRAME_POINTER)
 	do {
 		int ret = unwind_frame(&frame);
 		if (ret < 0)
 			return 0;
 	} while (in_lock_functions(frame.pc));
+#endif
 
 	return frame.pc;
 }
