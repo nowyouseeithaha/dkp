@@ -31,6 +31,8 @@
 #include "spm.h"
 #include "idle.h"
 
+//#define DEBUG
+
 /******************************************************************************
  * Debug Definitions
  *****************************************************************************/
@@ -41,10 +43,14 @@ enum {
 	MSM_RPMRS_DEBUG_EVENT_TIMER = BIT(2),
 };
 
+#ifdef DEBUG
 static int msm_rpmrs_debug_mask;
 module_param_named(
 	debug_mask, msm_rpmrs_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
 );
+#else
+#define msm_rpmrs_debug_mask (0)
+#endif
 
 static struct msm_rpmrs_level *msm_rpmrs_levels;
 static int msm_rpmrs_level_count;

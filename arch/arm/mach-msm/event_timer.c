@@ -18,6 +18,8 @@
 #include <linux/slab.h>
 #include <mach/event_timer.h>
 
+//#define DEBUG
+
 #define __INIT_HEAD(x)	{ .head = RB_ROOT,\
 			.next = NULL, }
 
@@ -43,10 +45,14 @@ static DEFINE_SPINLOCK(event_timer_lock);
 static struct hrtimer event_hrtimer;
 static enum hrtimer_restart event_hrtimer_cb(struct hrtimer *hrtimer);
 
+#ifdef DEBUG
 static int msm_event_debug_mask;
 module_param_named(
 	debug_mask, msm_event_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP
 );
+#else
+#define msm_event_debug_mask (0)
+#endif
 
 enum {
 	MSM_EVENT_TIMER_DEBUG = 1U << 0,

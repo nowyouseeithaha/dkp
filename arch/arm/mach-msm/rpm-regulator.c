@@ -39,10 +39,14 @@ enum {
 	MSM_RPM_VREG_DEBUG_IGNORE_VDD_MEM_DIG = BIT(3),
 };
 
+#ifdef DEBUG
 static int msm_rpm_vreg_debug_mask;
 module_param_named(
 	debug_mask, msm_rpm_vreg_debug_mask, int, S_IRUSR | S_IWUSR
 );
+#else
+#define msm_rpm_vreg_debug_mask (0)
+#endif
 
 struct vreg_config *(*get_config[])(void) = {
 	[RPM_VREG_VERSION_8660] = get_config_8660,

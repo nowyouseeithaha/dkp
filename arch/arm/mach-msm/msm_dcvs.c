@@ -27,6 +27,8 @@
 #include <asm/page.h>
 #include <mach/msm_dcvs.h>
 
+//#define DEBUG
+
 #define CORE_HANDLE_OFFSET (0xA0)
 #define __err(f, ...) pr_err("MSM_DCVS: %s: " f, __func__, __VA_ARGS__)
 #define __info(f, ...) pr_info("MSM_DCVS: %s: " f, __func__, __VA_ARGS__)
@@ -85,11 +87,17 @@ struct dcvs_core {
 	int32_t timer_disabled;
 };
 
-static int msm_dcvs_debug;
 static int msm_dcvs_enabled = 1;
 module_param_named(enable, msm_dcvs_enabled, int, S_IRUGO | S_IWUSR | S_IWGRP);
+#ifdef DEBUG
+static int msm_dcvs_debug;
+#else
+#define msm_dcvs_debug (0)
+#endif
 
+#ifdef CONFIG_DEBUG_FS
 static struct dentry *debugfs_base;
+#endif
 
 static struct dcvs_core core_list[CORES_MAX];
 static DEFINE_MUTEX(core_list_lock);
@@ -735,6 +743,7 @@ static int __init msm_dcvs_late_init(void)
 		goto err;
 	}
 
+#ifdef CONFIG_DEBUG_FS
 	debugfs_base = debugfs_create_dir("msm_dcvs", NULL);
 	if (!debugfs_base) {
 		__err("Cannot create debugfs base %s\n", "msm_dcvs");
@@ -748,12 +757,15 @@ static int __init msm_dcvs_late_init(void)
 		ret = -ENOMEM;
 		goto err;
 	}
+#endif
 
 err:
 	if (ret) {
 		kobject_del(cores_kobj);
 		cores_kobj = NULL;
+#ifdef CONFIG_DEBUG_FS
 		debugfs_remove(debugfs_base);
+#endif
 	}
 
 	return ret;

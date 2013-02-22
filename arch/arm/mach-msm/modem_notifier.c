@@ -178,8 +178,6 @@ static int modem_notifier_debugfs_init(void)
 	}
 	return 0;
 }
-#else
-static void modem_notifier_debugfs_init(void) {}
 #endif
 
 #define RESET_REASON_NORMAL			0x1A2B3C00

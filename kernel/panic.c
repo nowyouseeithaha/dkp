@@ -81,7 +81,9 @@ NORET_TYPE void panic(const char * fmt, ...)
 	 * Disable the Trace AS SOON AS POSSIBLE So we can preserve the
 	 * Faulty Instructions for Analysis
 	 */
-	 __etb_disable();
+#ifdef CONFIG_MSM_QDSS
+	__etb_disable();
+#endif
 
 	/*
 	 * It's possible to come here directly from a panic-assertion and

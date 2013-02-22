@@ -126,11 +126,11 @@ enum {
 	SMSM_APPS_DEM_I = 3,
 };
 
+#if defined(CONFIG_MSM_SMD_DEBUG)
 static int msm_smd_debug_mask;
 module_param_named(debug_mask, msm_smd_debug_mask,
 		   int, S_IRUGO | S_IWUSR | S_IWGRP);
 
-#if defined(CONFIG_MSM_SMD_DEBUG)
 #define SMD_DBG(x...) do {				\
 		if (msm_smd_debug_mask & MSM_SMD_DEBUG) \
 			printk(KERN_DEBUG x);		\
