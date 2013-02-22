@@ -27,6 +27,8 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 
+//#define DEFER_STATS
+
 enum interaction_flags {
 	IFLAG_PRESSED = 1,
 	IFLAG_RUNNING = 2,
@@ -60,7 +62,9 @@ struct cpu_dbs_info_s {
 	/* Interaction hack stuff */
 	int is_interactive;
 	unsigned int defer_cycles;
+#ifdef DEFER_STATS
 	unsigned int deferred_return;
+#endif
 	unsigned int max_freq;
 };
 static DEFINE_PER_CPU(struct cpu_dbs_info_s, cs_cpu_dbs_info);
@@ -104,7 +108,7 @@ static struct dbs_tuners {
 	.hotplug_up_load = 3,
 	.hotplug_up_usage = 600000,
 	.hotplug_down_usage = 225000,
-	.overestimate_khz = 75000,
+	.overestimate_khz = 35000,
 	.hispeed_thresh = 25000,
 	.hispeed_decrease = 25000,
 	.interaction_sampling_rate = 10000,
@@ -396,12 +400,16 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* Return from interaction? */
 	if (IGF(ENABLED)) {
 		if (!IGF(PRESSED)) {
+#ifdef DEFER_STATS
 			this_dbs_info->deferred_return++;
+#endif
 			if (load < dbs_tuners_ins.interaction_return_usage) {
 				if (this_dbs_info->defer_cycles++ >= dbs_tuners_ins.interaction_return_cycles) {
 					IUF(ENABLED);
+#ifdef DEFER_STATS
 					printk(KERN_DEBUG "freelunch: deferred noninteractive %u cycles.\n",
 						this_dbs_info->deferred_return);
+#endif
 				}
 			} else this_dbs_info->defer_cycles = 0;
 		}
@@ -519,7 +527,9 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		this_dbs_info->requested_freq = policy->cur;
 		this_dbs_info->hotplug_cycle = 0;
 		this_dbs_info->defer_cycles = 0;
+#ifdef DEFER_STATS
 		this_dbs_info->deferred_return = 0;
+#endif
 		/* Dirty hack */
 		if (cpu > 0)
 			this_dbs_info->is_interactive = per_cpu(cs_cpu_dbs_info, 0).is_interactive;
@@ -606,7 +616,9 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		if (IGF(PRESSED)) {
 			IUF(PRESSED);
 			this_dbs_info->defer_cycles = 0;
+#ifdef DEFER_STATS
 			this_dbs_info->deferred_return = 0;
+#endif
 		}
 		mutex_unlock(&this_dbs_info->timer_mutex);
 
