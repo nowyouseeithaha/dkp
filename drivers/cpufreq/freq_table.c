@@ -184,11 +184,8 @@ static ssize_t show_available_freqs(struct cpufreq_policy *policy, char *buf)
 	ssize_t count = 0;
 	struct cpufreq_frequency_table *table;
 
-	if (!per_cpu(cpufreq_show_table, cpu))
-		return -ENODEV;
-
 	table = acpuclk_get_full_freq_table(cpu);
-	if (!table) return -ENOMEM;
+	if (!table) return -ENODEV;
 
 	for (i = 0; (table[i].frequency != CPUFREQ_TABLE_END); i++) {
 		if (table[i].frequency == CPUFREQ_ENTRY_INVALID)
