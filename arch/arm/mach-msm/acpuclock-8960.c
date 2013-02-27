@@ -2032,7 +2032,7 @@ static struct attribute_group vdd_attr_group = {
 };
 
 /* Enable OC frequencies.  Also bump max voltage & bus speed. */
-void acpuclk_enable_oc_freqs(void) {
+void acpuclk_enable_oc_freqs(unsigned int freq) {
 	struct acpu_level *tgt = acpu_freq_tbl;
 
 	scalable_8960[CPU0].vreg[VREG_CORE].max_vdd = 1400000;
@@ -2040,7 +2040,7 @@ void acpuclk_enable_oc_freqs(void) {
 
 	for (; tgt->l2_level; tgt++) {
 		if (tgt->speed.khz > BOOT_FREQ_LIMIT)
-			tgt->use_for_scaling = 1;
+			tgt->use_for_scaling = tgt->speed.khz <= freq ? 1 : 0;
 	}
 	tgt--;
 	tgt->l2_level->bw_level = MAX_BUS_LVL;
@@ -2081,20 +2081,26 @@ static struct acpuclk_data acpuclk_8960_data = {
 	.wait_for_irq_khz = STBY_KHZ,
 };
 
-/* Override the available freqs list.  This is a dirty hack, but should fool
- * userspace into picking OC frequencies.
- */
-static ssize_t show_available_freqs(struct cpufreq_policy *policy, char *buf) {
-	struct acpu_level *tgt = acpu_freq_tbl;
-	ssize_t count = 0;
+struct cpufreq_frequency_table *acpuclk_get_full_freq_table(unsigned int cpu) {
+	struct cpufreq_frequency_table *tbl;
+	int i, freq_cnt = 0;
 
-	if (!tgt) return -EINVAL;
-	for (; tgt->l2_level; tgt++) {
-		if (tgt->speed.khz == STBY_KHZ) continue;
-		count += sprintf(buf + count, "%d ", tgt->speed.khz);
+	tbl = kmalloc((FREQ_TABLE_SIZE+5) *
+		sizeof(struct cpufreq_frequency_table), GFP_KERNEL);
+	if (!tbl) return 0;
+
+	for (i = 0; acpu_freq_tbl[i].speed.khz != 0; i++) {
+		if (acpu_freq_tbl[i].speed.khz != STBY_KHZ) {
+			tbl[freq_cnt].index = freq_cnt;
+			tbl[freq_cnt].frequency
+				= acpu_freq_tbl[i].speed.khz;
+			freq_cnt++;
+		}
 	}
-	count += sprintf(buf + count, "\n");
-	return count;
+	tbl[freq_cnt].index = freq_cnt;
+	tbl[freq_cnt].frequency = CPUFREQ_TABLE_END;
+
+	return tbl;
 }
 
 static int __init acpuclk_8960_init(struct acpuclk_soc_data *soc_data)
@@ -2117,9 +2123,6 @@ static int __init acpuclk_8960_init(struct acpuclk_soc_data *soc_data)
 
 	if (sysfs_create_group(cpufreq_global_kobject, &vdd_attr_group))
 		pr_err("Unable to create vdd_table group!\n");
-
-	/* I feel so naughty */
-	cpufreq_freq_attr_scaling_available_freqs.show = show_available_freqs;
 
 	return 0;
 }

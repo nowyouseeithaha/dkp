@@ -455,11 +455,14 @@ static ssize_t store_scaling_min_freq
 	return count;
 }
 
-static struct work_struct enable_oc_work;
-void acpuclk_enable_oc_freqs(void);
+static struct freq_work_struct {
+	struct work_struct work;
+	unsigned int freq;
+} enable_oc_work;
+void acpuclk_enable_oc_freqs(unsigned int freq);
 
 static void do_enable_oc(struct work_struct *work) {
-	acpuclk_enable_oc_freqs();
+	acpuclk_enable_oc_freqs(((struct freq_work_struct *) work)->freq);
 }
 static ssize_t store_scaling_max_freq
 	(struct cpufreq_policy *policy, const char *buf, size_t count)
@@ -471,8 +474,10 @@ static ssize_t store_scaling_max_freq
 	if (ret != 1)
 		return -EINVAL;
 
-	if (value > BOOT_FREQ_LIMIT)
-		schedule_work(&enable_oc_work);
+	if (value > BOOT_FREQ_LIMIT) {
+		enable_oc_work.freq = value;
+		schedule_work((struct work_struct *) &enable_oc_work);
+	}
 
 	if (policy->cpu == BOOT_CPU) {
 		if (value >= MAX_FREQ_LIMIT)
@@ -2245,7 +2250,7 @@ int cpufreq_register_driver(struct cpufreq_driver *driver_data)
 	cpufreq_queue_priv.wq = create_workqueue("cpufreq_queue");
 	INIT_WORK(&cpufreq_queue_priv.work, cpufreq_set_limit_work);
 #endif
-	INIT_WORK(&enable_oc_work, do_enable_oc);
+	INIT_WORK((struct work_struct *) &enable_oc_work, do_enable_oc);
 
 	register_hotcpu_notifier(&cpufreq_cpu_notifier);
 	pr_debug("driver %s up and running\n", driver_data->name);

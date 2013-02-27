@@ -101,7 +101,7 @@ int acpuclk_init(struct acpuclk_soc_data *);
 /**
  * acpuclk_enable_oc_freqs() - unlock all frequency steppings
  */
-void acpuclk_enable_oc_freqs(void);
+void acpuclk_enable_oc_freqs(unsigned int freq);
 
 /* SoC-specific acpuclock initialization functions. */
 extern struct acpuclk_soc_data acpuclk_7x27_soc_data;
