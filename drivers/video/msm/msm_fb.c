@@ -98,12 +98,14 @@ static u32 msm_fb_pseudo_palette[16] = {
 
 static struct ion_client *iclient;
 
+#ifdef MSM_FB_ENABLE_DBGFS
 u32 msm_fb_debug_enabled;
 /* Setting msm_fb_msg_level to 8 prints out ALL messages */
 u32 msm_fb_msg_level = 7;
 
 /* Setting mddi_msg_level to 8 prints out ALL messages */
 u32 mddi_msg_level = 5;
+#endif
 
 extern int32 mdp_block_power_cnt[MDP_MAX_BLOCK];
 extern unsigned long mdp_timer_duration;
