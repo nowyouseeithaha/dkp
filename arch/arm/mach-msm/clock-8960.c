@@ -36,6 +36,8 @@
 #include "clock-dss-8960.h"
 #include "devices.h"
 
+//#define EXTRA_TABLES
+
 #define REG(off)	(MSM_CLK_CTL_BASE + (off))
 #define REG_MM(off)	(MSM_MMSS_CLK_CTL_BASE + (off))
 #define REG_LPA(off)	(MSM_LPASS_CLK_CTL_BASE + (off))
@@ -3392,6 +3394,7 @@ static unsigned long fmax_gfx3d_8960_v2[MAX_VDD_LEVELS] __initdata = {
 	[VDD_DIG_HIGH]    = 400000000
 };
 
+#ifdef EXTRA_TABLES
 static struct clk_freq_tbl clk_tbl_gfx3d_8064[] = {
 	F_GFX3D(        0, gnd,   0,  0),
 	F_GFX3D( 27000000, pxo,   0,  0),
@@ -3417,6 +3420,7 @@ static unsigned long fmax_gfx3d_8064[MAX_VDD_LEVELS] __initdata = {
 	[VDD_DIG_NOMINAL] = 325000000,
 	[VDD_DIG_HIGH]    = 400000000
 };
+#endif
 
 static struct bank_masks bmnd_info_gfx3d = {
 	.bank_sel_mask =		BIT(11),
@@ -3572,11 +3576,13 @@ static unsigned long fmax_ijpeg_8960_v2[MAX_VDD_LEVELS] __initdata = {
 	[VDD_DIG_HIGH]    = 320000000
 };
 
+#ifdef EXTRA_TABLES
 static unsigned long fmax_ijpeg_8064[MAX_VDD_LEVELS] __initdata = {
 	[VDD_DIG_LOW]     = 128000000,
 	[VDD_DIG_NOMINAL] = 266667000,
 	[VDD_DIG_HIGH]    = 320000000
 };
+#endif
 
 static struct rcg_clk ijpeg_clk = {
 	.b = {
@@ -3677,10 +3683,12 @@ static struct clk_freq_tbl clk_tbl_mdp[] = {
 	F_END
 };
 
+#ifdef EXTRA_TABLES
 static unsigned long fmax_mdp_8064[MAX_VDD_LEVELS] __initdata = {
 	[VDD_DIG_LOW]     = 128000000,
 	[VDD_DIG_NOMINAL] = 266667000
 };
+#endif
 
 static struct bank_masks bmnd_info_mdp = {
 	.bank_sel_mask =		BIT(11),
@@ -3910,10 +3918,12 @@ static struct clk_freq_tbl clk_tbl_tv[] = {
 	F_END
 };
 
+#ifdef EXTRA_TABLES
 static unsigned long fmax_tv_src_8064[MAX_VDD_LEVELS] __initdata = {
 	[VDD_DIG_LOW]     =  74250000,
 	[VDD_DIG_NOMINAL] = 149000000
 };
+#endif
 
 /*
  * Unlike other clocks, the TV rate is adjusted through PLL
@@ -4183,11 +4193,13 @@ static unsigned long fmax_vfe_8960_v2[MAX_VDD_LEVELS] __initdata = {
 	[VDD_DIG_HIGH]    = 320000000
 };
 
+#ifdef EXTRA_TABLES
 static unsigned long fmax_vfe_8064[MAX_VDD_LEVELS] __initdata = {
 	[VDD_DIG_LOW]     = 128000000,
 	[VDD_DIG_NOMINAL] = 266667000,
 	[VDD_DIG_HIGH]    = 320000000
 };
+#endif
 
 static struct rcg_clk vfe_clk = {
 	.b = {
@@ -4906,6 +4918,7 @@ static struct measure_clk measure_clk = {
 	.multiplier = 1,
 };
 
+#ifdef EXTRA_TABLES
 static struct clk_lookup msm_clocks_8064[] = {
 	CLK_LOOKUP("cxo",		cxo_clk.c,		NULL),
 	CLK_LOOKUP("cxo",		cxo_clk.c,		"wcnss_wlan.0"),
@@ -5149,6 +5162,7 @@ static struct clk_lookup msm_clocks_8064[] = {
 	CLK_LOOKUP("krait0_mclk",	krait0_m_clk, NULL),
 	CLK_LOOKUP("krait1_mclk",	krait1_m_clk, NULL),
 };
+#endif
 
 static struct clk_lookup msm_clocks_8960_v1[] __initdata = {
 	CLK_LOOKUP("cxo",		cxo_clk.c,		NULL),
@@ -5922,6 +5936,7 @@ static void __init msm8960_clock_init(void)
 	 * Change the freq tables for and voltage requirements for
 	 * clocks which differ between 8960 and 8064.
 	 */
+#ifdef EXTRA_TABLES
 	if (cpu_is_apq8064()) {
 		gfx3d_clk.freq_tbl = clk_tbl_gfx3d_8064;
 
@@ -5938,6 +5953,7 @@ static void __init msm8960_clock_init(void)
 
 		gmem_axi_clk.c.depends = &gfx3d_axi_clk.c;
 	}
+#endif
 
 	vote_vdd_level(&vdd_dig, VDD_DIG_HIGH);
 
@@ -6035,9 +6051,11 @@ struct clock_init_data msm8960_clock_init_data __initdata = {
 	.late_init = msm8960_clock_late_init,
 };
 
+#ifdef EXTRA_TABLES
 struct clock_init_data apq8064_clock_init_data __initdata = {
 	.table = msm_clocks_8064,
 	.size = ARRAY_SIZE(msm_clocks_8064),
 	.init = msm8960_clock_init,
 	.late_init = msm8960_clock_late_init,
 };
+#endif
