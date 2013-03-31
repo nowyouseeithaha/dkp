@@ -14,8 +14,9 @@
 #include <linux/delay.h>
 #include <mach/socinfo.h>
 
-#include "kgsl.h"
 #include "adreno.h"
+#if __adreno_is_a3xx
+#include "kgsl.h"
 #include "kgsl_sharedmem.h"
 #include "kgsl_cffdump.h"
 #include "a3xx_reg.h"
@@ -2772,3 +2773,4 @@ struct adreno_gpudev adreno_a3xx_gpudev = {
 	.start = a3xx_start,
 	.snapshot = a3xx_snapshot,
 };
+#endif

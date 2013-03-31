@@ -9,7 +9,7 @@
  *
  */
 
-#define SEC_TOUCHKEY_DEBUG
+//#define SEC_TOUCHKEY_DEBUG
 /* #define SEC_TOUCHKEY_VERBOSE_DEBUG */
 #define TOUCH_INTERACTION
 

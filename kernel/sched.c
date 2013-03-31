@@ -76,7 +76,7 @@
 #include <asm/tlb.h>
 #include <asm/irq_regs.h>
 #include <asm/mutex.h>
-#if CONFIG_SEC_DEBUG
+#ifdef CONFIG_SEC_DEBUG
 #include <mach/sec_debug.h>
 #endif
 
@@ -4319,7 +4319,7 @@ need_resched:
 		 */
 		cpu = smp_processor_id();
 		rq = cpu_rq(cpu);
-#if CONFIG_SEC_DEBUG
+#ifdef CONFIG_SEC_DEBUG
 		sec_debug_task_sched_log(cpu, rq->curr);
 #endif
 	} else
@@ -4451,7 +4451,7 @@ asmlinkage void __sched preempt_schedule_irq(void)
 
 	do {
 		add_preempt_count(PREEMPT_ACTIVE);
-		secdbg_sched_msg(">prmptsched_irq");
+		//secdbg_sched_msg(">prmptsched_irq");
 		local_irq_enable();
 		__schedule();
 		local_irq_disable();

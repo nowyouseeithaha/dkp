@@ -13,7 +13,7 @@
 /*
  * IPC ROUTER SMD XPRT module.
  */
-#define DEBUG
+//#define DEBUG
 
 #include <linux/platform_device.h>
 #include <linux/types.h>
@@ -24,16 +24,17 @@
 #include "ipc_router.h"
 #include "smd_private.h"
 
+#if defined(DEBUG)
 static int msm_ipc_router_smd_xprt_debug_mask;
 module_param_named(debug_mask, msm_ipc_router_smd_xprt_debug_mask,
 		   int, S_IRUGO | S_IWUSR | S_IWGRP);
 
-#if defined(DEBUG)
 #define D(x...) do { \
 if (msm_ipc_router_smd_xprt_debug_mask) \
 	pr_info(x); \
 } while (0)
 #else
+#define msm_ipc_router_smd_xprt_debug_mask (0)
 #define D(x...) do { } while (0)
 #endif
 

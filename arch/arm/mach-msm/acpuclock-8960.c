@@ -14,6 +14,7 @@
 #define FREQ_TABLE_SIZE 33
 #define MAX_BUS_LVL 7
 //#define ENABLE_VMIN
+//#define EXTRA_TABLES
 
 static unsigned int final_vmin = 700000;
 
@@ -200,6 +201,7 @@ static struct scalable scalable_8960[] = {
 static DEFINE_MUTEX(driver_lock);
 static DEFINE_SPINLOCK(l2_lock);
 
+#ifdef EXTRA_TABLES
 static struct scalable scalable_8064[] = {
 	[CPU0] = {
 			.hfpll_base      = MSM_HFPLL_BASE + 0x200,
@@ -357,6 +359,7 @@ static struct scalable scalable_8627[] = {
 					     RPM_VREG_ID_PM8921_L23 },
 		},
 };
+#endif /* EXTRA_TABLES */
 
 static struct scalable *scalable;
 static struct l2_level *l2_freq_tbl;
@@ -403,6 +406,7 @@ static struct msm_bus_scale_pdata bus_client_pdata = {
 
 static uint32_t bus_perf_client;
 
+#ifdef EXTRA_TABLES
 /* TODO: Update vdd_dig and vdd_mem when voltage data is available. */
 #define L2(x) (&l2_freq_tbl_8960_kraitv1[(x)])
 static struct l2_level l2_freq_tbl_8960_kraitv1[] = {
@@ -451,6 +455,10 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv1_nom_fast[] = {
 	{ 1, {  918000, HFPLL, 1, 0, 0x22 }, L2(11), 1025000 },
 	{ 0, { 0 } }
 };
+#else
+#define acpu_freq_tbl_8960_kraitv1_slow NULL
+#define acpu_freq_tbl_8960_kraitv1_nom_fast NULL
+#endif /* EXTRA_TABLES */
 
 #undef L2
 #define L2(x) (&l2_freq_tbl_8960_kraitv2[(x)])
@@ -917,6 +925,7 @@ static struct acpu_level acpu_freq_tbl_8960_kraitv2_f3[] = {
 
 #endif
 
+#ifdef EXTRA_TABLES
 /* TODO: Update vdd_dig and vdd_mem when voltage data is available. */
 #undef L2
 #define L2(x) (&l2_freq_tbl_8064[(x)])
@@ -1047,6 +1056,7 @@ static struct acpu_level acpu_freq_tbl_8627[] = {
 	{ 1, {   972000, HFPLL, 1, 0, 0x24 }, L2(12), 1100000 },
 	{ 0, { 0 } }
 };
+#endif /* EXTRA_TABLES */
 
 static unsigned long acpuclk_8960_get_rate(int cpu)
 {
@@ -1839,6 +1849,7 @@ static struct acpu_level * __init select_freq_plan(void)
 		}
 #endif
 		scalable = scalable_8960;
+#ifdef EXTRA_TABLES
 		if (cpu_is_krait_v1()) {
 			acpu_freq_tbl = v1;
 			l2_freq_tbl = l2_freq_tbl_8960_kraitv1;
@@ -1866,6 +1877,12 @@ static struct acpu_level * __init select_freq_plan(void)
 	} else {
 		BUG();
 	}
+#else
+		acpu_freq_tbl = v2;
+		l2_freq_tbl = l2_freq_tbl_8960_kraitv2;
+		l2_freq_tbl_size = ARRAY_SIZE(l2_freq_tbl_8960_kraitv2);
+	}
+#endif /* EXTRA_TABLES */
 	if (krait_needs_vmin())
 #ifdef ENABLE_VMIN
 		kraitv2_apply_vmin(acpu_freq_tbl);

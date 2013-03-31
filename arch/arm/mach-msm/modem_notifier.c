@@ -23,7 +23,7 @@
 #include <mach/sec_debug.h>
 #include "modem_notifier.h"
 
-#define DEBUG
+//#define DEBUG
 
 #ifdef CONFIG_SEC_DEBUG_LOW_LOG
 #include <asm/uaccess.h>
@@ -178,8 +178,6 @@ static int modem_notifier_debugfs_init(void)
 	}
 	return 0;
 }
-#else
-static void modem_notifier_debugfs_init(void) {}
 #endif
 
 #define RESET_REASON_NORMAL			0x1A2B3C00
@@ -259,11 +257,15 @@ static void register_test_notifier(void)
 
 static int __init init_modem_notifier_list(void)
 {
+#ifdef CONFIG_DEBUG_FS
 	int ret;
 	srcu_init_notifier_head(&modem_notifier_list);
 	ret = modem_notifier_debugfs_init();
 	if (ret < 0)
 		return ret;
+#else
+	srcu_init_notifier_head(&modem_notifier_list);
+#endif
 #if defined(DEBUG)
 	register_test_notifier();
 #endif

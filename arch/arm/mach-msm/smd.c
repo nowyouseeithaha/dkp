@@ -15,6 +15,8 @@
  *
  */
 
+//#define BOGUS
+
 #include <linux/platform_device.h>
 #include <linux/module.h>
 #include <linux/fs.h>
@@ -124,11 +126,11 @@ enum {
 	SMSM_APPS_DEM_I = 3,
 };
 
+#if defined(CONFIG_MSM_SMD_DEBUG)
 static int msm_smd_debug_mask;
 module_param_named(debug_mask, msm_smd_debug_mask,
 		   int, S_IRUGO | S_IWUSR | S_IWGRP);
 
-#if defined(CONFIG_MSM_SMD_DEBUG)
 #define SMD_DBG(x...) do {				\
 		if (msm_smd_debug_mask & MSM_SMD_DEBUG) \
 			printk(KERN_DEBUG x);		\
@@ -153,11 +155,11 @@ module_param_named(debug_mask, msm_smd_debug_mask,
 			printk(KERN_INFO x);		\
 	} while (0)
 #else
-#define SMD_DBG(x...) do { } while (0)
-#define SMSM_DBG(x...) do { } while (0)
-#define SMD_INFO(x...) do { } while (0)
-#define SMSM_INFO(x...) do { } while (0)
-#define SMx_POWER_INFO(x...) do { } while (0)
+#define SMD_DBG(x...)
+#define SMSM_DBG(x...)
+#define SMD_INFO(x...)
+#define SMSM_INFO(x...)
+#define SMx_POWER_INFO(x...)
 #endif
 
 static unsigned last_heap_free = 0xffffffff;
@@ -364,6 +366,7 @@ static inline void notify_wcnss_smd(void)
 	MSM_TRIG_A2WCNSS_SMD_INT;
 }
 
+#ifdef BOGUS
 void smd_diag(void)
 {
 	char *x;
@@ -410,6 +413,18 @@ int smsm_check_for_modem_crash(void)
 	}
 	return 0;
 }
+#else
+int smsm_check_for_modem_crash(void) {
+	if (!smsm_info.state)
+		return 0;
+
+	if (__raw_readl(SMSM_STATE_ADDR(SMSM_MODEM_STATE)) & SMSM_RESET) {
+		for(;;);
+		return -1;
+	}
+	return 0;
+}
+#endif
 EXPORT_SYMBOL(smsm_check_for_modem_crash);
 
 /* the spinlock is used to synchronize between the

@@ -10,6 +10,8 @@
  * GNU General Public License for more details.
  */
 
+//#define DEBUG
+
 #include <linux/slab.h>
 #include <linux/sched.h>
 #include <linux/wait.h>
@@ -80,7 +82,11 @@ struct dentry *sdio_tty_debug_root;
 struct dentry *sdio_tty_debug_info;
 #endif
 
+#ifdef DEBUG
 #define DEBUG_MSG(sdio_tty_drv, x...) if (sdio_tty_drv->debug_msg_on) pr_info(x)
+#else
+#define DEBUG_MSG(x...)
+#endif
 
 /*
  * Enable sdio_tty debug messages

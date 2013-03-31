@@ -16,6 +16,8 @@
 #include "kgsl.h"
 #include "kgsl_sharedmem.h"
 
+#ifdef CONFIG_DEBUG_FS
+
 #include "adreno.h"
 #include "adreno_pm4types.h"
 #include "adreno_ringbuffer.h"
@@ -866,6 +868,13 @@ static int adreno_dump(struct kgsl_device *device)
 
 	/* Dump the registers if the user asked for it */
 	if (is_adreno_pm_regs_enabled()) {
+#if CONFIG_AXXX_REV
+#define REGCAT(h, r, p) (h ## r ## p)
+#define REGFILE(r) REGCAT(a, r, _registers)
+#define REGCOUNT(r) REGCAT(a, r, _registers_count)
+		adreno_dump_regs(device, REGFILE(CONFIG_AXXX_REV),
+			REGCOUNT(CONFIG_AXXX_REV));
+#else
 		if (adreno_is_a20x(adreno_dev))
 			adreno_dump_regs(device, a200_registers,
 					a200_registers_count);
@@ -878,6 +887,7 @@ static int adreno_dump(struct kgsl_device *device)
 		else if (adreno_is_a3xx(adreno_dev))
 			adreno_dump_regs(device, a3xx_registers,
 					a3xx_registers_count);
+#endif
 	}
 
 error_vfree:
@@ -967,3 +977,8 @@ int adreno_postmortem_dump(struct kgsl_device *device, int manual)
 
 	return 0;
 }
+#else
+int adreno_postmortem_dump(struct kgsl_device *device, int manual) {
+	return 0;
+}
+#endif

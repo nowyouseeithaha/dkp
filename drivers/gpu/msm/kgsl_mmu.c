@@ -28,9 +28,15 @@
 #define KGSL_MMU_ALIGN_SHIFT    13
 #define KGSL_MMU_ALIGN_MASK     (~((1 << KGSL_MMU_ALIGN_SHIFT) - 1))
 
+#ifdef KGSL_FORCE_MMU
+#define kgsl_mmu_type KGSL_FORCE_MMU
+#else
 static enum kgsl_mmutype kgsl_mmu_type;
+#endif
 
+#ifdef KGSL_STATS
 static void pagetable_remove_sysfs_objects(struct kgsl_pagetable *pagetable);
+#endif /* KGSL_STATS */
 
 static int kgsl_cleanup_pt(struct kgsl_pagetable *pt)
 {
@@ -90,7 +96,9 @@ static void kgsl_destroy_pagetable(struct kref *kref)
 	list_del(&pagetable->list);
 	spin_unlock_irqrestore(&kgsl_driver.ptlock, flags);
 
+#ifdef KGSL_STATS
 	pagetable_remove_sysfs_objects(pagetable);
+#endif /* KGSL_STATS */
 
 	kgsl_cleanup_pt(pagetable);
 
@@ -129,6 +137,7 @@ kgsl_get_pagetable(unsigned long name)
 	return ret;
 }
 
+#ifdef KGSL_STATS
 static struct kgsl_pagetable *
 _get_pt_from_kobj(struct kobject *kobj)
 {
@@ -307,6 +316,7 @@ err:
 
 	return ret;
 }
+#endif /* KGSL_STATS */
 
 unsigned int kgsl_mmu_get_ptsize(void)
 {
@@ -500,8 +510,10 @@ static struct kgsl_pagetable *kgsl_mmu_createpagetableobject(
 	list_add(&pagetable->list, &kgsl_driver.pagetable_list);
 	spin_unlock_irqrestore(&kgsl_driver.ptlock, flags);
 
+#ifdef KGSL_STATS
 	/* Create the sysfs entries */
 	pagetable_add_sysfs_objects(pagetable);
+#endif /* KGSL_STATS */
 
 	return pagetable;
 
@@ -546,7 +558,9 @@ void kgsl_setstate(struct kgsl_mmu *mmu, unsigned int context_id,
 			uint32_t flags)
 {
 	struct kgsl_device *device = mmu->device;
+#if !CONFIG_AXXX_REV
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
+#endif
 
 	if (!(flags & (KGSL_MMUFLAGS_TLBFLUSH | KGSL_MMUFLAGS_PTUPDATE))
 		&& !adreno_is_a2xx(adreno_dev))
@@ -795,6 +809,7 @@ void *kgsl_mmu_ptpool_init(int entries)
 }
 EXPORT_SYMBOL(kgsl_mmu_ptpool_init);
 
+#ifndef KGSL_FORCE_MMU
 int kgsl_mmu_enabled(void)
 {
 	if (KGSL_MMU_TYPE_NONE != kgsl_mmu_type)
@@ -828,6 +843,7 @@ void kgsl_mmu_set_mmutype(char *mmutype)
 		kgsl_mmu_type = KGSL_MMU_TYPE_NONE;
 }
 EXPORT_SYMBOL(kgsl_mmu_set_mmutype);
+#endif
 
 int kgsl_mmu_gpuaddr_in_range(unsigned int gpuaddr)
 {

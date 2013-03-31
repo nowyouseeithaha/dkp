@@ -65,36 +65,6 @@ enum {
 
 struct dcs_cmd_list	cmdlist;
 
-#ifdef CONFIG_FB_MSM_MDP40
-void mipi_dsi_mdp_stat_inc(int which)
-{
-	switch (which) {
-	case STAT_DSI_START:
-		mdp4_stat.dsi_mdp_start++;
-#if defined(DEBUG_MDP_LOCKUP)
-		mdp4_stat.last_dma_start_time = jiffies;
-		mdp4_stat.last_dma_process = current;
-#endif
-		break;
-	case STAT_DSI_ERROR:
-		mdp4_stat.intr_dsi_err++;
-		break;
-	case STAT_DSI_CMD:
-		mdp4_stat.intr_dsi_cmd++;
-		break;
-	case STAT_DSI_MDP:
-		mdp4_stat.intr_dsi_mdp++;
-		break;
-	default:
-		break;
-	}
-}
-#else
-void mipi_dsi_mdp_stat_inc(int which)
-{
-}
-#endif
-
 void mipi_dsi_init(void)
 {
 	init_completion(&dsi_dma_comp);
@@ -1067,8 +1037,6 @@ void mipi_dsi_cmd_mdp_start(void)
 {
 	unsigned long flag;
 
-	mipi_dsi_mdp_stat_inc(STAT_DSI_START);
-
 	spin_lock_irqsave(&dsi_mdp_lock, flag);
 	mipi_dsi_enable_irq(DSI_MDP_TERM);
 	dsi_mdp_busy = TRUE;
@@ -1641,31 +1609,12 @@ int mipi_dsi_cmd_dma_tx(struct dsi_buf *tp)
 	wmb();
 	spin_unlock_irqrestore(&dsi_mdp_lock, flags);
 
-/* If LCD disconnected, wait and return error when Timeout.*/
-#if defined(DEBUG_MDP_LOCKUP)
-	mdp4_stat.last_cmd_dma_time = jiffies;
-	mdp4_stat.last_cmd_dma_intr_loss = false;
-	if (!wait_for_completion_timeout(&dsi_dma_comp,
-		MIPI_DSI_TX_TIMEOUT_MS)) {
-		/* Timeout occurred, doesnot get cmd interrupt */
-		mdp4_stat.last_cmd_dma_intr_loss = true;
-	}
-#else
 	tx_start = ktime_get_real();
 	if (!wait_for_completion_timeout(&dsi_dma_comp, MIPI_DSI_TX_TIMEOUT_MS)) {
 		tx_time = (unsigned int)(ktime_to_ms(ktime_sub(ktime_get_real(), tx_start)));
-#if 0
-		if (tx_time == 0)
-			msleep(MIPI_DSI_TX_REF_MS);
-
-		if ((tx_time < MIPI_DSI_TX_REF_MS) && (tx_time > 0))
-			msleep(MIPI_DSI_TX_REF_MS - tx_time);
-#else
 		if (tx_time == 0)
 			msleep(1);
-#endif
 	}
-#endif
 	dma_unmap_single(&dsi_dev, tp->dmap, tp->len, DMA_TO_DEVICE);
 	tp->dmap = 0;
 	return tp->len;
@@ -1955,11 +1904,7 @@ irqreturn_t mipi_dsi_isr(int irq, void *ptr)
 
 	pr_debug("%s: isr=%x\n", __func__, (int)isr);
 
-#ifdef CONFIG_FB_MSM_MDP40
-	mdp4_stat.intr_dsi++;
-#endif
 	if (isr & DSI_INTR_ERROR) {
-		mipi_dsi_mdp_stat_inc(STAT_DSI_ERROR);
 		mipi_dsi_error();
 	}
 
@@ -1971,7 +1916,6 @@ irqreturn_t mipi_dsi_isr(int irq, void *ptr)
 	}
 
 	if (isr & DSI_INTR_CMD_DMA_DONE) {
-		mipi_dsi_mdp_stat_inc(STAT_DSI_CMD);
 		spin_lock(&dsi_mdp_lock);
 		complete(&dsi_dma_comp);
 		dsi_ctrl_lock = FALSE;
@@ -1980,7 +1924,6 @@ irqreturn_t mipi_dsi_isr(int irq, void *ptr)
 	}
 
 	if (isr & DSI_INTR_CMD_MDP_DONE) {
-		mipi_dsi_mdp_stat_inc(STAT_DSI_MDP);
 		spin_lock(&dsi_mdp_lock);
 		dsi_ctrl_lock = FALSE;
 		dsi_mdp_busy = FALSE;

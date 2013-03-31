@@ -11,7 +11,9 @@
  * GNU General Public License for more details.
  */
 
-#define pr_fmt(fmt) "%s: " fmt, __func__
+//#define DEBUG
+//#define pr_fmt(fmt) "%s: " fmt, __func__
+#define pr_fmt(fmt)
 
 #include <linux/module.h>
 #include <linux/err.h>
@@ -37,10 +39,14 @@ enum {
 	MSM_RPM_VREG_DEBUG_IGNORE_VDD_MEM_DIG = BIT(3),
 };
 
+#ifdef DEBUG
 static int msm_rpm_vreg_debug_mask;
 module_param_named(
 	debug_mask, msm_rpm_vreg_debug_mask, int, S_IRUSR | S_IWUSR
 );
+#else
+#define msm_rpm_vreg_debug_mask (0)
+#endif
 
 struct vreg_config *(*get_config[])(void) = {
 	[RPM_VREG_VERSION_8660] = get_config_8660,
@@ -109,7 +115,7 @@ static inline int vreg_id_is_vdd_mem_or_dig(int id)
 	return id == vreg_id_vdd_mem || id == vreg_id_vdd_dig;
 }
 
-#define DEBUG_PRINT_BUFFER_SIZE 512
+//#define DEBUG_PRINT_BUFFER_SIZE 512
 
 static void rpm_regulator_req(struct vreg *vreg, int set)
 {
@@ -117,9 +123,11 @@ static void rpm_regulator_req(struct vreg *vreg, int set)
 	const char *pf_label = "", *fm_label = "", *pc_total = "";
 	const char *pc_en[4] = {"", "", "", ""};
 	const char *pm_label = "", *freq_label = "";
+#ifdef DEBUG
 	char buf[DEBUG_PRINT_BUFFER_SIZE];
 	size_t buflen = DEBUG_PRINT_BUFFER_SIZE;
 	int pos = 0;
+#endif
 
 	/* Suppress VDD_MEM and VDD_DIG printing. */
 	if ((msm_rpm_vreg_debug_mask & MSM_RPM_VREG_DEBUG_IGNORE_VDD_MEM_DIG)
@@ -160,6 +168,7 @@ static void rpm_regulator_req(struct vreg *vreg, int set)
 	if (pc == RPM_VREG_PIN_CTRL_NONE)
 		pc_total = " none";
 
+#ifdef DEBUG
 	pos += scnprintf(buf + pos, buflen - pos, "%s%s: ",
 			 KERN_INFO, __func__);
 
@@ -224,6 +233,7 @@ static void rpm_regulator_req(struct vreg *vreg, int set)
 
 	pos += scnprintf(buf + pos, buflen - pos, "\n");
 	printk(buf);
+#endif
 }
 
 static void rpm_regulator_vote(struct vreg *vreg, enum rpm_vreg_voter voter,

@@ -23,6 +23,8 @@
 #include <linux/mfd/pm8xxx/core.h>
 #include <linux/mfd/pm8xxx/regulator.h>
 
+//#define DEBUG
+
 /* Debug Flag Definitions */
 enum {
 	PM8XXX_VREG_DEBUG_REQUEST	= BIT(0),
@@ -31,10 +33,14 @@ enum {
 	PM8XXX_VREG_DEBUG_WRITES	= BIT(3), /* SSBI writes */
 };
 
+#ifdef DEBUG
 static int pm8xxx_vreg_debug_mask;
 module_param_named(
 	debug_mask, pm8xxx_vreg_debug_mask, int, S_IRUSR | S_IWUSR
 );
+#else
+#define pm8xxx_vreg_debug_mask (0)
+#endif
 
 /* Common Masks */
 #define REGULATOR_ENABLE_MASK		0x80

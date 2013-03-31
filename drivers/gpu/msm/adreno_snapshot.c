@@ -15,6 +15,7 @@
 #include "kgsl_snapshot.h"
 
 #include "adreno.h"
+
 #include "adreno_pm4types.h"
 #include "a2xx_reg.h"
 #include "a3xx_reg.h"
@@ -394,6 +395,7 @@ static void ib_parse_type3(struct kgsl_device *device, unsigned int *ptr,
  * needlessly caching buffers that won't be used during a draw call
  */
 
+#if __adreno_is_a3xx
 static void ib_parse_type0(struct kgsl_device *device, unsigned int *ptr,
 	unsigned int ptbase)
 {
@@ -466,6 +468,7 @@ static void ib_parse_type0(struct kgsl_device *device, unsigned int *ptr,
 		}
 	}
 }
+#endif
 
 /* Add an IB as a GPU object, but first, parse it to find more goodies within */
 
@@ -497,7 +500,11 @@ static void ib_add_gpu_object(struct kgsl_device *device, unsigned int ptbase,
 			else
 				ib_parse_type3(device, &src[i], ptbase);
 		} else if (pkt_is_type0(src[i])) {
+#if __adreno_is_a3xx
 			ib_parse_type0(device, &src[i], ptbase);
+#else
+			printk(KERN_WARNING "adreno: can't handle pkt type 0!\n");
+#endif
 		}
 
 		i += pktsize;
