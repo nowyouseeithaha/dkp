@@ -13,6 +13,8 @@
 #ifndef __KGSL_H
 #define __KGSL_H
 
+//#define KGSL_STATS
+
 #include <linux/types.h>
 #include <linux/msm_kgsl.h>
 #include <linux/platform_device.h>
@@ -66,8 +68,13 @@
    the statisic is greater then _max, set _max
 */
 
+#ifdef KGSL_STATS
 #define KGSL_STATS_ADD(_size, _stat, _max) \
 	do { _stat += (_size); if (_stat > _max) _max = _stat; } while (0)
+#else
+#define KGSL_STATS_ADD(_size, _stat, _max) \
+	do { } while (0)
+#endif
 
 struct kgsl_device;
 
@@ -96,6 +103,7 @@ struct kgsl_driver {
 
 	void *ptpool;
 
+#ifdef KGSL_STATS
 	struct {
 		unsigned int vmalloc;
 		unsigned int vmalloc_max;
@@ -107,6 +115,7 @@ struct kgsl_driver {
 		unsigned int mapped_max;
 		unsigned int histogram[16];
 	} stats;
+#endif /* KGSL_STATS */
 };
 
 extern struct kgsl_driver kgsl_driver;

@@ -22,6 +22,7 @@
 #include "kgsl_cffdump.h"
 #include "kgsl_device.h"
 
+#ifdef KGSL_STATS
 /* An attribute for showing per-process memory statistics */
 struct kgsl_mem_entry_attribute {
 	struct attribute attr;
@@ -62,7 +63,7 @@ struct mem_entry_stats {
 	.max_attr = __MEM_ENTRY_ATTR(_type, _name##_max, \
 		mem_entry_max_show), \
 }
-
+#endif /* KGSL_STATS */
 
 /*
  * One page allocation for a guard region to protect against over-zealous
@@ -71,6 +72,7 @@ struct mem_entry_stats {
 
 static struct page *kgsl_guard_page;
 
+#ifdef KGSL_STATS
 /**
  * Given a kobj, find the process structure attached to it
  */
@@ -277,6 +279,7 @@ kgsl_sharedmem_init_sysfs(void)
 	return kgsl_create_device_sysfs_files(&kgsl_driver.virtdev,
 		drv_attr_list);
 }
+#endif /* KGSL_STATS */
 
 #ifdef CONFIG_OUTER_CACHE
 static void _outer_cache_range_op(int op, unsigned long addr, size_t size)
@@ -332,7 +335,7 @@ static int kgsl_page_alloc_vmfault(struct kgsl_memdesc *memdesc,
 	return 0;
 }
 
-static int kgsl_page_alloc_vmflags(struct kgsl_memdesc *memdesc)
+static inline int kgsl_page_alloc_vmflags(struct kgsl_memdesc *memdesc)
 {
 	return VM_RESERVED | VM_DONTEXPAND;
 }
@@ -347,18 +350,22 @@ static void kgsl_page_alloc_free(struct kgsl_memdesc *memdesc)
 	if (memdesc->flags & KGSL_MEMDESC_GUARD_PAGE)
 		sglen--;
 
+#ifdef KGSL_STATS
 	kgsl_driver.stats.page_alloc -= memdesc->size;
+#endif
 
 	if (memdesc->hostptr) {
 		vunmap(memdesc->hostptr);
+#ifdef KGSL_STATS
 		kgsl_driver.stats.vmalloc -= memdesc->size;
+#endif
 	}
 	if (memdesc->sg)
 		for_each_sg(memdesc->sg, sg, sglen, i)
 			__free_page(sg_page(sg));
 }
 
-static int kgsl_contiguous_vmflags(struct kgsl_memdesc *memdesc)
+static inline int kgsl_contiguous_vmflags(struct kgsl_memdesc *memdesc)
 {
 	return VM_RESERVED | VM_IO | VM_PFNMAP | VM_DONTEXPAND;
 }
@@ -429,7 +436,9 @@ static int kgsl_contiguous_vmfault(struct kgsl_memdesc *memdesc,
 static void kgsl_ebimem_free(struct kgsl_memdesc *memdesc)
 
 {
+#ifdef KGSL_STATS
 	kgsl_driver.stats.coherent -= memdesc->size;
+#endif
 	if (memdesc->hostptr)
 		iounmap(memdesc->hostptr);
 
@@ -452,7 +461,9 @@ static int kgsl_ebimem_map_kernel(struct kgsl_memdesc *memdesc)
 
 static void kgsl_coherent_free(struct kgsl_memdesc *memdesc)
 {
+#ifdef KGSL_STATS
 	kgsl_driver.stats.coherent -= memdesc->size;
+#endif
 	dma_free_coherent(NULL, memdesc->size,
 			  memdesc->hostptr, memdesc->physaddr);
 }
@@ -639,10 +650,12 @@ _kgsl_sharedmem_page_alloc(struct kgsl_memdesc *memdesc,
 	KGSL_STATS_ADD(size, kgsl_driver.stats.page_alloc,
 		kgsl_driver.stats.page_alloc_max);
 
+#ifdef KGSL_STATS
 	order = get_order(size);
 
 	if (order < 16)
 		kgsl_driver.stats.histogram[order]++;
+#endif
 
 done:
 	kfree(pages);
