@@ -77,6 +77,11 @@ static char V255_300CD_G_LSB;
 static char V255_300CD_B_MSB;
 static char V255_300CD_B_LSB;
 
+int trinity[21] = { 0, 0, 5, -18, -16, -10, 0, 0, 3, 0, 0, 3, 0, 0, 3, 0, 0, 3, 0, 0, 3 };
+int stock[21];
+int *color_mods = stock;
+struct SMART_DIM *gpsmart;
+
 static int char_to_int(char data1)
 {
 	int cal_data;
@@ -87,6 +92,12 @@ static int char_to_int(char data1)
 		cal_data = data1;
 
 	return cal_data;
+}
+
+void trinity_load_colors(unsigned int val)
+{
+	color_mods = val ? trinity : stock;
+	smart_dimming_init(gpsmart);
 }
 
 #define v255_coefficient 100
@@ -1526,6 +1537,8 @@ int smart_dimming_init(struct SMART_DIM *psmart)
 	char pBuffer[256];
 	memset(pBuffer, 0x00, 256);
 #endif
+	gpsmart = psmart;
+
 	gamma_cell_determine(psmart->ldi_revision);
 	set_max_lux_table();
 
