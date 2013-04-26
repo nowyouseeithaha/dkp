@@ -172,7 +172,24 @@ static int s5c73m3_i2c_write(unsigned short addr, unsigned short data)
 }
 
 static void s5c73m3_i2c_write_check(void)
-{ return; }
+{
+	int index = 0;
+
+	do {
+		if (s5c73m3_ctrl->i2c_write_check == 1) {
+			cam_err("i2c is writing now!!, index : %d\n", index);
+			index++;
+			usleep(1*1000);
+		} else
+			break;
+
+	} while (index < 20);
+
+	if (index == 20) {
+		cam_err("error index : %d\n", index);
+		s5c73m3_ctrl->i2c_write_check = 0;
+	}
+}
 
 static int s5c73m3_i2c_write_block(const u32 regs[], int size)
 {
@@ -455,6 +472,7 @@ static int s5c73m3_wait_ISP_status(void)
 		++index;
 		CAM_DBG_H("Waiting until to finish handling a command"
 			"in ISP =====>> %d\n", index);
+		usleep(500); /* Just for test delay */
 
 	} while (index < 400);
 
@@ -1374,7 +1392,8 @@ retry:
 			cam_err("failed s5c73m3_wait_ISP_status\n");
 				return -EIO;
 		}
-	}
+	} else
+		usleep(10*1000);
 
 	s5c73m3_ctrl->zoomPreValue = level;
 
@@ -3338,6 +3357,9 @@ static int s5c73m3_sensor_init_probe(const struct msm_camera_sensor_info *data)
 
 	CAM_DBG_M("Entered\n");
 
+	/*data->sensor_platform_info->sensor_power_on(0);*/
+	usleep(5*1000);
+
 	if (!data->sensor_platform_info->sensor_is_vdd_core_set()) {
 		rc = s5c73m3_read_vdd_core();
 		if (rc < 0) {
@@ -3698,8 +3720,15 @@ int s5c73m3_sensor_config(void __user *argp)
 
 int s5c73m3_sensor_release(void)
 {
+	int rc = 0;
+	int temp = 0;
+	CAM_DBG_M("Entered\n");
 	s5c73m3_set_af_softlanding();
-	return 0;
+	usleep(10*1000);
+	/*power off the LDOs*/
+	/*s5c73m3_ctrl->sensordata->sensor_platform_info->sensor_power_off(0);*/
+
+	return rc;
 }
 
 static int s5c73m3_i2c_probe(struct i2c_client *client,

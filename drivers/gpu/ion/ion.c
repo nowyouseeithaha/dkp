@@ -424,6 +424,7 @@ struct ion_handle *ion_alloc(struct ion_client *client, size_t len,
 		if (secure_allocation && (heap->type != ION_HEAP_TYPE_CP))
 			continue;
 
+#if 0 // Nobody cares, ion.  Nobody cares.
 		if (heap->id == ION_CP_MM_HEAP_ID) {
 			if (client->task == NULL)
 				printk(KERN_WARNING "MM ION alloc request from %s (%d)\n",
@@ -435,6 +436,7 @@ struct ion_handle *ion_alloc(struct ion_client *client, size_t len,
 					task_comm, client->pid);
 			}
 		}
+#endif
 
 		buffer = ion_buffer_create(heap, dev, len, align, flags);
 		if (!IS_ERR_OR_NULL(buffer))
