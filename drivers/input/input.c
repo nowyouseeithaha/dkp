@@ -133,7 +133,7 @@ static void input_pass_values(struct input_dev *dev,
 
 	rcu_read_unlock();
 
-	add_input_randomness(vals->type, vals->code, vals->value);
+	//add_input_randomness(vals->type, vals->code, vals->value);
 
 	/* trigger auto repeat for key events */
 	for (v = vals; v != vals + count; v++) {

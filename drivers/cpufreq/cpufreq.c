@@ -464,7 +464,7 @@ void acpuclk_enable_oc_freqs(unsigned int freq);
 
 static void do_enable_oc(struct work_struct *work) {
 	struct cpufreq_policy new_policy;
-	struct cpufreq_policy *policy = 
+	struct cpufreq_policy *policy =
 		((struct freq_work_struct *) work)->policy;
 	if (cpufreq_get_policy(&new_policy, policy->cpu))
 		return;
@@ -786,28 +786,6 @@ extern void msm_rq_stats_enable(int enable);
 static ssize_t store(struct kobject *kobj, struct attribute *attr,
 		     const char *buf, size_t count)
 {
-#if 0
-	struct cpufreq_policy *policy = to_policy(kobj);
-	struct freq_attr *fattr = to_attr(attr);
-	ssize_t ret = -EINVAL;
-	policy = cpufreq_cpu_get_sysfs(policy->cpu);
-	if (!policy)
-		goto no_policy;
-
-	if (lock_policy_rwsem_write(policy->cpu) < 0)
-		goto fail;
-
-	if (fattr->store)
-		ret = fattr->store(policy, buf, count);
-	else
-		ret = -EIO;
-
-	unlock_policy_rwsem_write(policy->cpu);
-fail:
-	cpufreq_cpu_put_sysfs(policy);
-no_policy:
-	return ret;
-#else
         struct cpufreq_policy *policy = to_policy(kobj);
         struct freq_attr *fattr = to_attr(attr);
         ssize_t ret = count;
@@ -892,7 +870,6 @@ fail:
         }
 
         return ret;
-#endif
 }
 
 static void cpufreq_sysfs_release(struct kobject *kobj)
