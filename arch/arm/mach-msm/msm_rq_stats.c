@@ -29,6 +29,7 @@
 #include <linux/cpufreq.h>
 #include <linux/kernel_stat.h>
 #include <linux/tick.h>
+#include <linux/delay.h>
 
 #ifdef CONFIG_SEC_DVFS_DUAL
 #include <linux/cpufreq.h>
@@ -42,6 +43,7 @@
 
 struct notifier_block freq_transition;
 struct notifier_block cpu_hotplug;
+static char notifiers_registered;
 
 struct cpu_load_data {
 	cputime64_t prev_cpu_idle;
@@ -434,6 +436,73 @@ static int init_rq_attribs(void)
 	return err;
 }
 
+/* Certain kernels (KT747) remove the mpdecision service from their ramdisk.
+ * dkp doesn't include its own ramdisk, so if it's flashed after KT747,
+ * mpdecision will be unavailable.  This is bad, so make sure that mpdecision
+ * is running.
+ */
+//static inline void start_mpdecision(void) {
+static struct delayed_work mpd_work;
+void check_for_mpd(struct work_struct *work) {
+	struct task_struct *tsk;
+	int cycle;
+	static char *srargv[] = {
+		"/system/bin/start",
+		"mpdecision", NULL,
+	};
+	static char *mpargv[] = {
+		"/system/bin/mpdecision",
+		"--no_sleep", "--avg_comp", NULL,
+	};
+	char *mpenv[] = {
+		"HOME=/", "TERM=linux",
+		"PATH=/system/bin", NULL,
+	};
+	for (cycle = 0; cycle < 3; cycle++) {
+		for_each_process(tsk) {
+			if (strstr(tsk->comm, "mpdecision"))
+				return;
+		}
+		if (!cycle) {
+			printk(KERN_DEBUG "rq-stats: trying to start mpdecision (%i)...\n", cycle);
+			call_usermodehelper(srargv[0], srargv, mpenv, UMH_WAIT_PROC);
+		} else if (cycle == 1){
+			printk(KERN_DEBUG "rq-stats: trying to start mpdecision (%i)...\n", cycle);
+			call_usermodehelper(mpargv[0], mpargv, mpenv, UMH_WAIT_EXEC);
+		} else {
+			printk(KERN_DEBUG "rq-stats: couldn't start mpdecision...\n");
+		}
+		msleep(1000);
+	}
+}
+
+void msm_rq_stats_enable(int enable) {
+	if (enable != notifiers_registered) {
+		if (enable) {
+			printk(KERN_DEBUG "rq-stats: enable cpufreq notifier\n");
+			cpufreq_register_notifier(&freq_transition,
+						CPUFREQ_TRANSITION_NOTIFIER);
+		} else {
+			printk(KERN_DEBUG "rq-stats: disable cpufreq notifier\n");
+			cpufreq_unregister_notifier(&freq_transition,
+						CPUFREQ_TRANSITION_NOTIFIER);
+		}
+		notifiers_registered = enable;
+	}
+	if (enable != rq_info.init) {
+		if (enable) {
+			rq_info.rq_poll_total_jiffies = 0;
+			rq_info.rq_poll_last_jiffy = jiffies;
+			rq_info.rq_avg = 0;
+		}
+		printk(KERN_DEBUG "rq-stats: rq_info.init = %i\n", enable);
+		rq_info.init = enable;
+	}
+	if (enable)
+		schedule_delayed_work(&mpd_work, 5 * HZ);
+}
+EXPORT_SYMBOL(msm_rq_stats_enable);
+
 static int __init msm_rq_stats_init(void)
 {
 	int ret;
@@ -468,6 +537,10 @@ static int __init msm_rq_stats_init(void)
 	cpufreq_register_notifier(&freq_transition,
 					CPUFREQ_TRANSITION_NOTIFIER);
 	register_hotcpu_notifier(&cpu_hotplug);
+
+	notifiers_registered = 1;
+
+	INIT_DELAYED_WORK_DEFERRABLE(&mpd_work, check_for_mpd);
 
 	return ret;
 }

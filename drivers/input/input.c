@@ -56,22 +56,6 @@ static inline int is_event_supported(unsigned int code,
 	return code <= max && test_bit(code, bm);
 }
 
-static int input_defuzz_abs_event(int value, int old_val, int fuzz)
-{
-	if (fuzz) {
-		if (value > old_val - fuzz / 2 && value < old_val + fuzz / 2)
-			return old_val;
-
-		if (value > old_val - fuzz && value < old_val + fuzz)
-			return (old_val * 3 + value) / 4;
-
-		if (value > old_val - fuzz * 2 && value < old_val + fuzz * 2)
-			return (old_val + value) / 2;
-	}
-
-	return value;
-}
-
 static void input_start_autorepeat(struct input_dev *dev, int code)
 {
 	if (test_bit(EV_REP, dev->evbit) &&
@@ -239,8 +223,6 @@ static int input_handle_abs_event(struct input_dev *dev,
 	}
 
 	if (pold) {
-		*pval = input_defuzz_abs_event(*pval, *pold,
-						dev->absinfo[code].fuzz);
 		if (*pold == *pval)
 			return INPUT_IGNORE_EVENT;
 

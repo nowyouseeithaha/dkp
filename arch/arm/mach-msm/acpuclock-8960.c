@@ -1626,7 +1626,7 @@ static void __init bus_init(unsigned int init_bw)
 #ifdef CONFIG_CPU_FREQ_MSM
 static struct cpufreq_frequency_table freq_table[NR_CPUS][(FREQ_TABLE_SIZE+1)];
 
-static void cpufreq_table_init(void)
+static void cpufreq_table_init(int boot)
 {
 	int cpu;
 
@@ -1659,6 +1659,9 @@ static void cpufreq_table_init(void)
 		/* Register table with CPUFreq. */
 		cpufreq_frequency_table_get_attr(freq_table[cpu], cpu);
 
+		if (!boot)
+			continue;
+
 		/* Update maximum frequency, notify cpufreq core */
 		pol = cpufreq_cpu_get(cpu);
                 if (pol != NULL) {
@@ -1668,7 +1671,7 @@ static void cpufreq_table_init(void)
 	}
 }
 #else
-static void __init cpufreq_table_init(void) {}
+static void __init cpufreq_table_init(int boot) {}
 #endif
 
 #define HOT_UNPLUG_KHZ STBY_KHZ
@@ -1948,6 +1951,11 @@ static int acpuclk_update_all_vdd(int adj) {
 	}
 	return 1;
 }
+#define sanity_check(v) \
+	if (v < 10000) \
+		v = (v * 1000) + ((v % 5 == 2) ? 500 : 0); \
+	if (v > 1400000 || v < 700000) \
+		return -EINVAL;
 /* My kingdom for a regular expression! */
 ssize_t acpuclk_store_vdd_table(const char *buf, size_t count) {
 	unsigned int freq, volt;
@@ -1991,7 +1999,7 @@ ssize_t acpuclk_store_vdd_table(const char *buf, size_t count) {
 	}
 	if (thislen == count - 1) {
 		while (freq < 10000) freq *= 1000;
-		while (volt < 10000) volt *= 1000;
+		sanity_check(volt);
 		if (acpuclk_update_one_vdd(freq, volt) == 1)
 			return count;
 		else
@@ -2003,7 +2011,7 @@ ssize_t acpuclk_store_vdd_table(const char *buf, size_t count) {
 		ret = sscanf(buf + len, " %u%n", &table[idx], &thislen);
 		if (!ret) break;
 		len += thislen;
-		while (table[idx] < 10000) table[idx] *= 1000;
+		sanity_check(table[idx]);
 	}
 	if (idx == FREQ_TABLE_SIZE && len == count - 1) {
 		if (acpuclk_update_vdd_table(FREQ_TABLE_SIZE, table))
@@ -2062,7 +2070,19 @@ void acpuclk_enable_oc_freqs(unsigned int freq) {
 	tgt--;
 	tgt->l2_level->bw_level = MAX_BUS_LVL;
 
-	cpufreq_table_init();
+	cpufreq_table_init(0);
+}
+
+void acpuclk_set_override_vmin(int enable) {
+	if (enable) {
+		final_vmin = 700000;
+	} else {
+		final_vmin = krait_needs_vmin() ?
+			1150000 : 700000;
+	}
+}
+int acpuclk_get_override_vmin(void) {
+	return final_vmin < 1150000;
 }
 
 static ssize_t store_vmin(struct kobject *kobj, struct attribute *attr,
@@ -2130,14 +2150,13 @@ static int __init acpuclk_8960_init(struct acpuclk_soc_data *soc_data)
 	init_clock_sources(&scalable[L2], &max_acpu_level->l2_level->speed);
 	on_each_cpu(per_cpu_init, max_acpu_level, true);
 
-	cpufreq_table_init();
+	cpufreq_table_init(1);
 
 	acpuclk_register(&acpuclk_8960_data);
 	register_hotcpu_notifier(&acpuclock_cpu_notifier);
 
 	if (sysfs_create_group(cpufreq_global_kobject, &dkp_attr_group))
 		pr_err("Unable to create dkp group!\n");
-
 	if (sysfs_create_group(cpufreq_global_kobject, &vdd_attr_group))
 		pr_err("Unable to create vdd_table group!\n");
 

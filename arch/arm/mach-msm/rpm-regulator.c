@@ -119,15 +119,14 @@ static inline int vreg_id_is_vdd_mem_or_dig(int id)
 
 static void rpm_regulator_req(struct vreg *vreg, int set)
 {
+#ifdef DEBUG
 	int uV, mV, fm, pm, pc, pf, pd, freq, state, i;
 	const char *pf_label = "", *fm_label = "", *pc_total = "";
 	const char *pc_en[4] = {"", "", "", ""};
 	const char *pm_label = "", *freq_label = "";
-#ifdef DEBUG
 	char buf[DEBUG_PRINT_BUFFER_SIZE];
 	size_t buflen = DEBUG_PRINT_BUFFER_SIZE;
 	int pos = 0;
-#endif
 
 	/* Suppress VDD_MEM and VDD_DIG printing. */
 	if ((msm_rpm_vreg_debug_mask & MSM_RPM_VREG_DEBUG_IGNORE_VDD_MEM_DIG)
@@ -168,7 +167,6 @@ static void rpm_regulator_req(struct vreg *vreg, int set)
 	if (pc == RPM_VREG_PIN_CTRL_NONE)
 		pc_total = " none";
 
-#ifdef DEBUG
 	pos += scnprintf(buf + pos, buflen - pos, "%s%s: ",
 			 KERN_INFO, __func__);
 

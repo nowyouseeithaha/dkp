@@ -4057,6 +4057,7 @@ static void sdio_print_mailbox(char *prefix_str, struct sdio_mailbox *mailbox)
 }
 
 static void sdio_al_print_info(void)
+#ifdef DEBUG
 {
 	int i = 0;
 	int j = 0;
@@ -4249,6 +4250,9 @@ static void sdio_al_print_info(void)
 		sdio_print_mailbox(buf, hw_mailbox);
 	}
 }
+#else
+{ return; }
+#endif
 
 static struct sdio_device_id sdio_al_sdioid[] = {
     {.class = 0, .vendor = 0x70, .device = 0x2460},

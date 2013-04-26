@@ -56,7 +56,7 @@ u8 mDNIe_data[MAX_LUT_SIZE * 3];
 
 /* For brightness scaling */
 static unsigned int color_scaling_factors[3] = { 256, 256, 256 };
-static unsigned int trinity_colors;
+static unsigned int trinity_colors = 1;
 
 int play_speed_1_5;
 #if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_HD_PT) || \
@@ -117,7 +117,7 @@ static int parse_text(char *src, int len)
 	int i, count, ret;
 	int index = 0;
 	int j = 0;
-	char *str_line[300];
+	char **str_line;
 	char *sstart;
 	char *c;
 	unsigned int data1, data2, data3;
@@ -128,12 +128,19 @@ static int parse_text(char *src, int len)
 	sstart = c;
 	sharpvalue = 0;
 
+	str_line = kmalloc(sizeof(char *) * 300, GFP_KERNEL);
+	if (!str_line)
+		return -ENOMEM;
+
 	for (i = 0; i < len; i++, c++) {
 		char a = *c;
 		if (a == '\r' || a == '\n') {
 			if (c > sstart) {
 				str_line[count] = sstart;
-				count++;
+				if (++count > 298) {
+					index = -EINVAL;
+					goto out;
+				}
 			}
 			*c = '\0';
 			sstart = c + 1;
@@ -164,6 +171,8 @@ static int parse_text(char *src, int len)
 			index++;
 		}
 	}
+out:
+	kfree(str_line);
 	return index;
 }
 
@@ -854,7 +863,8 @@ static DEVICE_ATTR(scaling_factors, 0664,
 			scaling_factors_show,
 			scaling_factors_store);
 
-void trinity_load_colors(unsigned int val);
+extern void trinity_load_colors(unsigned int val);
+extern void mipi_bump_gamma(void);
 
 static ssize_t trinity_colors_show(struct device *dev,
 			struct device_attribute *attr,
@@ -873,6 +883,7 @@ static ssize_t trinity_colors_store(struct device *dev,
 	if (ret != 1)
 		return -EINVAL;
 	trinity_load_colors(trinity_colors);
+	mipi_bump_gamma();
 	return size;
 }
 

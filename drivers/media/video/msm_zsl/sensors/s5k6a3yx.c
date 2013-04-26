@@ -235,14 +235,15 @@ static int s5k6a3yx_sensor_config(void __user *argp)
 {
 	int rc;
 	mutex_lock(s5k6a3yx_s_ctrl.msm_sensor_mutex);
-	rc = msm_sensor_config(&s5k6a3yx_s_ctrl, argp);
+	return msm_sensor_config(&s5k6a3yx_s_ctrl, argp);
 	mutex_unlock(s5k6a3yx_s_ctrl.msm_sensor_mutex);
 	return rc;
 }
 
 static int s5k6a3yx_sensor_open_init(const struct msm_camera_sensor_info *data)
 {
-	return msm_sensor_open_init(&s5k6a3yx_s_ctrl, data);
+	s5k6a3yx_s_ctrl.sensordata = data;
+	return 0;
 }
 
 static int s5k6a3yx_sensor_release(void)
@@ -521,8 +522,6 @@ static struct msm_sensor_fn_t s5k6a3yx_func_tbl = {
 	.sensor_config = s5k6a3yx_sensor_config,
 	.sensor_open_init = s5k6a3yx_sensor_open_init,
 	.sensor_release = s5k6a3yx_sensor_release,
-	.sensor_power_up = msm_sensor_power_up,
-	.sensor_power_down = msm_sensor_power_down,
 	.sensor_probe = msm_sensor_probe,
 };
 

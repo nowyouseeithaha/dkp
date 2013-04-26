@@ -101,11 +101,16 @@ config CPU_FREQ_DEFAULT_GOV_CONSERVATIVE
 	  driver. Fallback governor will be the performance governor.
 
 config CPU_FREQ_DEFAULT_GOV_FREELUNCH
-	bool "stateplug"
+	bool "freelunch"
 	select CPU_FREQ_GOV_FREELUNCH
-	select CPU_FREQ_GOV_PERFORMANCE
-	help
-	  Fucking figure it out, damn it.
+
+config CPU_FREQ_DEFAULT_GOV_NANOLUNCH
+	bool "nanolunch"
+	select CPU_FREQ_GOV_NANOLUNCH
+
+config CPU_FREQ_DEFAULT_GOV_ASSWAX
+	bool "asswax"
+	select CPU_FREQ_GOV_ASSWAX
 
 config CPU_FREQ_DEFAULT_GOV_INTERACTIVE
 	bool "interactive"
@@ -115,6 +120,10 @@ config CPU_FREQ_DEFAULT_GOV_INTERACTIVE
 	  you to get a full dynamic cpu frequency capable system by simply
 	  loading your cpufreq low-level hardware driver, using the
 	  'interactive' governor for latency-sensitive workloads.
+
+config CPU_FREQ_DEFAULT_GOV_NANOACTIVE
+	bool "nanoactive"
+	select CPU_FREQ_GOV_NANOACTIVE
 
 endchoice
 
@@ -190,6 +199,9 @@ config CPU_FREQ_GOV_INTERACTIVE
 
 	  If in doubt, say N.
 
+config CPU_FREQ_GOV_NANOACTIVE
+	tristate "'nanoactive' cpufreq policy governor"
+
 config CPU_FREQ_GOV_CONSERVATIVE
 	tristate "'conservative' cpufreq governor"
 	depends on CPU_FREQ
@@ -218,6 +230,14 @@ config CPU_FREQ_GOV_FREELUNCH
 	depends on CPU_FREQ
 	help
 	  'freelunch' -- an incredibly simple hotplugging governor.
+
+config CPU_FREQ_GOV_NANOLUNCH
+	tristate "'nanolunch' cpufreq governor"
+	depends on CPU_FREQ
+
+config CPU_FREQ_GOV_ASSWAX
+	tristate "'asswax' cpufreq governor"
+	depends on CPU_FREQ
 
 config SEC_DVFS
 	bool "DVFS job"
