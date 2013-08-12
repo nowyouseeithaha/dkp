@@ -1018,9 +1018,9 @@ adreno_ringbuffer_issueibcmds(struct kgsl_device_private *dev_priv,
 		adreno_dev->drawctxt_active == drawctxt)
 		i = 1;
 
-	cmds = link = kzalloc(sizeof(unsigned int) * ((numibs - i) * 3 + 4),
+	cmds = link = kmalloc(sizeof(unsigned int) * ((numibs - i) * 3 + 4),
 				GFP_KERNEL);
-	if (unlikely(!link)) {
+	if (!link) {
 		KGSL_CORE_ERR("kzalloc(%d) failed\n",
 			sizeof(unsigned int) * ((numibs - i) * 3 + 4));
 		return -ENOMEM;
