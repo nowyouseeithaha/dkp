@@ -345,7 +345,7 @@ int mdp4_overlay_iommu_map_buf(int mem_id,
 	return 0;
 }
 
-static struct mdp4_iommu_pipe_info mdp_iommu[MDP4_MIXER_MAX][OVERLAY_PIPE_MAX];
+static struct mdp4_iommu_pipe_info mdp_iommu[MDP4_MIXER_MAX][MDP4_MIXER_STAGE_MAX];
 
 void mdp4_iommu_unmap(struct mdp4_overlay_pipe *pipe)
 {
@@ -355,7 +355,7 @@ void mdp4_iommu_unmap(struct mdp4_overlay_pipe *pipe)
 	if (!display_iclient)
 		return;
 
-	for (j = 0; j < OVERLAY_PIPE_MAX; j++) {
+	for (j = 0; j < MDP4_MIXER_STAGE_MAX; j++) {
 		iom_pipe_info = &mdp_iommu[pipe->mixer_num][j];
 		for (i = 0; i < MDP4_MAX_PLANE; i++) {
 			if (iom_pipe_info->prev_ihdl[i]) {
