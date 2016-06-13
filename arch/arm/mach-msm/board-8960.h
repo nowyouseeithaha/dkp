@@ -65,7 +65,7 @@ extern void __init mms_tsp_input_init(void);
 
 #ifdef CONFIG_SAMSUNG_CMC624
 extern int samsung_cmc624_on(int enable);
-extern int samsung_has_cmc624(void);
+extern bool samsung_has_cmc624(void);
 #endif
 
 extern struct sx150x_platform_data msm8960_sx150x_data[];
