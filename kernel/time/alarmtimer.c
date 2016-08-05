@@ -26,6 +26,10 @@
 #include <linux/workqueue.h>
 #include <linux/freezer.h>
 
+#ifdef CONFIG_WAKELOCK
+#include <linux/wakelock.h>
+#endif
+
 #define ALARM_DELTA 120
 
 /**
@@ -47,7 +51,11 @@ static struct alarm_base {
 static ktime_t freezer_delta;
 static DEFINE_SPINLOCK(freezer_delta_lock);
 
+#ifdef CONFIG_WAKELOCK
+static struct wake_lock alarm_backoff;
+#else
 static struct wakeup_source *ws;
+#endif
 
 #ifdef CONFIG_RTC_CLASS
 /* rtc timer and device for setting alarm wakeups at suspend */
@@ -118,7 +126,11 @@ static void alarmtimer_triggered_func(void *p)
 	struct rtc_device *rtc = rtcdev;
 	if (!(rtc->irq_data & RTC_AF))
 		return;
+#ifdef CONFIG_WAKELOCK
+	wake_lock_timeout(&alarm_backoff, 2 * HZ);
+#else
 	__pm_wakeup_event(ws, 2 * MSEC_PER_SEC);
+#endif
 }
 
 static struct rtc_task alarmtimer_rtc_task = {
@@ -293,7 +305,7 @@ ktime_t alarm_expires_remaining(const struct alarm *alarm)
 
 #ifdef CONFIG_RTC_CLASS
 /**
- * alarmtimer_suspend - Suspend time callback
+ * alarmtimer_prepare - Suspend time callback
  * @dev: unused
  * @state: unused
  *
@@ -302,7 +314,7 @@ ktime_t alarm_expires_remaining(const struct alarm *alarm)
  * set an rtc timer to fire that far into the future, which
  * will wake us from suspend.
  */
-static int alarmtimer_suspend(struct device *dev)
+static int alarmtimer_prepare(struct device *dev)
 {
 	struct rtc_time tm;
 	ktime_t min, now;
@@ -340,7 +352,12 @@ static int alarmtimer_suspend(struct device *dev)
 		return 0;
 
 	if (ktime_to_ns(min) < 2 * NSEC_PER_SEC) {
-		__pm_wakeup_event(ws, 2 * MSEC_PER_SEC);
+#ifdef CONFIG_WAKELOCK
+		wake_lock_timeout(&alarm_backoff,
+			HZ + nsecs_to_jiffies(ktime_to_ns(min)));
+#else
+		__pm_wakeup_event(ws, MSEC_PER_SEC + ktime_to_ms(min));
+#endif
 		return -EBUSY;
 	}
 
@@ -352,30 +369,35 @@ static int alarmtimer_suspend(struct device *dev)
 
 	/* Set alarm, if in the past reject suspend briefly to handle */
 	ret = rtc_timer_start(rtc, &rtctimer, now, ktime_set(0, 0));
-	if (ret < 0)
+	if (ret < 0) {
+#ifdef CONFIG_WAKELOCK
+		wake_lock_timeout(&alarm_backoff, HZ);
+#else
 		__pm_wakeup_event(ws, 1 * MSEC_PER_SEC);
+#endif
+	}
 	return ret;
 }
-static int alarmtimer_resume(struct device *dev)
+static void alarmtimer_complete(struct device *dev)
 {
 	struct rtc_device *rtc;
 
 	rtc = alarmtimer_get_rtcdev();
 	/* If we have no rtcdev, just return */
 	if (!rtc)
-		return 0;
+		return;
 	rtc_timer_cancel(rtc, &rtctimer);
-	return 0;
+	return;
 }
 #else
-static int alarmtimer_suspend(struct device *dev)
+static int alarmtimer_prepare(struct device *dev)
 {
 	return 0;
 }
 
-static int alarmtimer_resume(struct device *dev)
+static void alarmtimer_complete(struct device *dev)
 {
-	return 0;
+	return;
 }
 #endif
 
@@ -896,8 +918,8 @@ out:
 
 /* Suspend hook structures */
 static const struct dev_pm_ops alarmtimer_pm_ops = {
-	.suspend = alarmtimer_suspend,
-	.resume = alarmtimer_resume,
+	.prepare = alarmtimer_prepare,
+	.complete = alarmtimer_complete,
 };
 
 static struct platform_driver alarmtimer_driver = {
@@ -956,7 +978,11 @@ static int __init alarmtimer_init(void)
 		error = PTR_ERR(pdev);
 		goto out_drv;
 	}
+#ifdef CONFIG_WAKELOCK
+	wake_lock_init(&alarm_backoff, WAKE_LOCK_SUSPEND, "alarm_backoff");
+#else
 	ws = wakeup_source_register("alarmtimer");
+#endif
 	return 0;
 
 out_drv:
