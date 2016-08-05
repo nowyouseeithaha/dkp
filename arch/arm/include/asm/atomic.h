@@ -14,6 +14,7 @@
 #include <linux/compiler.h>
 #include <linux/types.h>
 #include <linux/irqflags.h>
+#include <linux/prefetch.h>
 #include <asm/barrier.h>
 #include <asm/cmpxchg.h>
 
